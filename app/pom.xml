@@ -5,7 +5,7 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>com.example</groupId>
+        <groupId>fr.unkn0wndo3s</groupId>
         <artifactId>file-organizer</artifactId>
         <version>1.0-SNAPSHOT</version>
     </parent>
@@ -14,23 +14,18 @@
     <packaging>jar</packaging>
 
     <dependencies>
-        <!-- core -->
         <dependency>
-            <groupId>com.example</groupId>
+            <groupId>fr.unkn0wndo3s</groupId>
             <artifactId>core</artifactId>
             <version>1.0-SNAPSHOT</version>
         </dependency>
-
-        <!-- ui -->
         <dependency>
-            <groupId>com.example</groupId>
+            <groupId>fr.unkn0wndo3s</groupId>
             <artifactId>ui</artifactId>
             <version>1.0-SNAPSHOT</version>
         </dependency>
-
-        <!-- windows -->
         <dependency>
-            <groupId>com.example</groupId>
+            <groupId>fr.unkn0wndo3s</groupId>
             <artifactId>windows</artifactId>
             <version>1.0-SNAPSHOT</version>
         </dependency>
@@ -38,13 +33,12 @@
 
     <build>
         <plugins>
-            <!-- Plugin pour JavaFX (exécution) -->
             <plugin>
                 <groupId>org.openjfx</groupId>
                 <artifactId>javafx-maven-plugin</artifactId>
                 <version>0.0.8</version>
                 <configuration>
-                    <mainClass>com.example.app.Main</mainClass>
+                    <mainClass>fr.unkn0wndo3s.app.Main</mainClass>
                 </configuration>
             </plugin>
         </plugins>
