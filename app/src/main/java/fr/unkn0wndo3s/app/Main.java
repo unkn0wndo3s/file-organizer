@@ -5,8 +5,10 @@ import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+import fr.unkn0wndo3s.core.init.DirectoryInitializer;
 import fr.unkn0wndo3s.core.scanner.FileScanner;
 import fr.unkn0wndo3s.ui.SearchWindow;
+import fr.unkn0wndo3s.windows.QuickAccessPinUtil;
 import fr.unkn0wndo3s.windows.WindowsHotkeyService;
 import javafx.application.Application;
 import javafx.application.Platform;
@@ -21,38 +23,54 @@ public class Main extends Application {
 
     @Override
     public void start(Stage primaryStage) {
-        // Pas d’icône barre des tâches
         Platform.setImplicitExit(false);
 
-        // UI : barre + console
         searchWindow = new SearchWindow();
+
         logWindow = new LogWindow();
+        logWindow.show();
         LogBus.addListener(line -> logWindow.append(line));
 
-        // Log les requêtes quand on presse Entrée dans la barre
         searchWindow.setOnSearchSubmit(q -> LogBus.log("[Search] " + q));
 
-        // Hotkey global
         hotkey = new WindowsHotkeyService(searchWindow::toggle);
         hotkey.start();
 
-        // Tray avec item "Console"
-        TrayUtil.installTray(searchWindow,
-                () -> { // onQuit
-                    if (hotkey != null) hotkey.stop();
-                    if (ioPool != null) ioPool.shutdownNow();
-                },
-                () -> logWindow.toggle() // onToggleConsole
-        );
+        TrayUtil.installTray(searchWindow, () -> {
+            if (hotkey != null) hotkey.stop();
+            if (ioPool != null) ioPool.shutdownNow();
+        }, () -> logWindow.toggle());
 
-        // Thread IO (daemon)
         ioPool = Executors.newSingleThreadExecutor(r -> {
             Thread t = new Thread(r, "ScanIO");
             t.setDaemon(true);
             return t;
         });
 
-        // ---- SCAN ASYNC (Downloads, top-level only, logs en temps réel) ----
+        // ---- INIT + DE-PIN Quick Access ----
+        try {
+            Path home = Path.of(System.getProperty("user.home"));
+            List<Path> ensured = DirectoryInitializer.ensureBaseAndFolders(home);
+            LogBus.log("[init] dossiers assurés :");
+            ensured.forEach(p -> LogBus.log("  - " + p));
+
+            LogBus.log("[unpin] Accès rapide (InvokeVerb via PowerShell) …");
+            for (Path p : ensured) {
+                boolean ok = QuickAccessPinUtil.unpin(p);
+                LogBus.log("  [" + (ok ? "OK" : "KO") + "] " + p);
+            }
+
+            // Si rien ne bouge et que tu veux TOUT vider (pins + récents) :
+            // boolean wiped = QuickAccessPinUtil.resetQuickAccess();
+            // LogBus.log("[unpin] reset total Accès rapide: " + (wiped ? "OK" : "KO"));
+
+        } catch (Exception e) {
+            LogBus.log("[init] erreur init/unpin: " + e.getMessage());
+            e.printStackTrace();
+        }
+        // ------------------------------------
+
+        // ---- SCAN ASYNC (Downloads, top-level only) ----
         ioPool.submit(() -> {
             try {
                 var scanner = new FileScanner();
@@ -77,9 +95,7 @@ public class Main extends Application {
                 e.printStackTrace();
             }
         });
-        // ---- /SCAN ASYNC ----
 
-        // Shutdown propre
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             try { if (hotkey != null) hotkey.stop(); } catch (Throwable ignored) {}
             try { if (ioPool != null) ioPool.shutdownNow(); } catch (Throwable ignored) {}

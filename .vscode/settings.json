@@ -10,5 +10,7 @@
 
   // tu peux garder le champ ci-dessous OU le supprimer si l’extension qui l’utilise te saoule
   "jdk.jdkhome": "C:\\Program Files\\Java\\jdk-17",
-  "java.configuration.updateBuildConfiguration": "automatic"
+  "java.configuration.updateBuildConfiguration": "automatic",
+  "files.encoding": "utf8",
+  "files.autoGuessEncoding": false
 }
