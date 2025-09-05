@@ -46,13 +46,11 @@
                 <artifactId>javafx-fxml</artifactId>
                 <version>${javafx.version}</version>
             </dependency>
-
             <dependency>
                 <groupId>com.github.kwhat</groupId>
                 <artifactId>jnativehook</artifactId>
                 <version>${jnativehook.version}</version>
             </dependency>
-
             <dependency>
                 <groupId>org.xerial</groupId>
                 <artifactId>sqlite-jdbc</artifactId>
@@ -73,7 +71,6 @@
                         <encoding>${maven.compiler.encoding}</encoding>
                     </configuration>
                 </plugin>
-
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-shade-plugin</artifactId>
