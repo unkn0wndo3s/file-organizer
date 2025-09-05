@@ -1,8 +1,13 @@
 package fr.unkn0wndo3s.ui;
 
+import java.util.Collection;
+import java.util.Objects;
 import java.util.function.Consumer;
 
 import javafx.application.Platform;
+import javafx.collections.FXCollections;
+import javafx.collections.ObservableList;
+import javafx.collections.transformation.FilteredList;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Scene;
@@ -19,27 +24,63 @@ public class SearchWindow {
     private final TextField input;
     private final ListView<String> results;
 
-    private Consumer<String> onSearchSubmit;
+    private final ObservableList<String> master = FXCollections.observableArrayList();
+    private final FilteredList<String> filtered = new FilteredList<>(master, s -> true);
+
+    private Consumer<String> onQuerySubmit;
+    private Consumer<String> onActivateItem;
 
     public SearchWindow() {
         stage = new Stage(StageStyle.UNDECORATED);
         stage.initModality(Modality.NONE);
         stage.setAlwaysOnTop(true);
 
-        input = new TextField();
-        input.setPromptText("Write to search");
-        input.getStyleClass().add("search-input");
-        input.setOnKeyPressed(e -> {
-            if (e.getCode() == KeyCode.ESCAPE) hide();
-            if (e.getCode() == KeyCode.ENTER) {
-                String q = input.getText() == null ? "" : input.getText().trim();
-                if (!q.isEmpty() && onSearchSubmit != null) onSearchSubmit.accept(q);
-                hide();
+        results = new ListView<>(filtered);
+        results.setFocusTraversable(false);
+        results.setOnMouseClicked(e -> {
+            if (e.getClickCount() >= 2) {
+                String sel = results.getSelectionModel().getSelectedItem();
+                if (sel != null && onActivateItem != null) {
+                    onActivateItem.accept(sel);
+                    hide();
+                }
             }
         });
 
-        results = new ListView<>();
-        results.setFocusTraversable(false);
+        input = new TextField();
+        input.setPromptText("Write to search");
+        input.getStyleClass().add("search-input");
+
+        input.textProperty().addListener((obs, oldV, v) -> {
+            final String q = v == null ? "" : v.trim().toLowerCase();
+            filtered.setPredicate(name -> q.isEmpty() || (name != null && name.toLowerCase().contains(q)));
+            if (!filtered.isEmpty()) results.getSelectionModel().select(0);
+        });
+
+        input.setOnKeyPressed(e -> {
+            if (e.getCode() == KeyCode.ESCAPE) hide();
+            if (e.getCode() == KeyCode.DOWN) {
+                results.getSelectionModel().selectNext();
+                results.scrollTo(results.getSelectionModel().getSelectedIndex());
+                e.consume();
+            }
+            if (e.getCode() == KeyCode.UP) {
+                results.getSelectionModel().selectPrevious();
+                results.scrollTo(results.getSelectionModel().getSelectedIndex());
+                e.consume();
+            }
+            if (e.getCode() == KeyCode.ENTER) {
+                String q = input.getText() == null ? "" : input.getText().trim();
+                String sel = results.getSelectionModel().getSelectedItem();
+                if (sel != null && onActivateItem != null) {
+                    onActivateItem.accept(sel);
+                    hide();
+                } else if (!q.isEmpty() && onQuerySubmit != null) {
+                    onQuerySubmit.accept(q);
+                    hide();
+                }
+            }
+        });
 
         VBox root = new VBox(10, input, results);
         root.setPadding(new Insets(14));
@@ -48,14 +89,31 @@ public class SearchWindow {
 
         Scene scene = new Scene(root, 680, 320);
         scene.setFill(null);
-
         scene.getStylesheets().add(
-            getClass().getResource("/dark.css").toExternalForm()
+            Objects.requireNonNull(getClass().getResource("/dark.css")).toExternalForm()
         );
-
         stage.setScene(scene);
         stage.setOnShown(e -> stage.centerOnScreen());
     }
+
+    public void setItems(Collection<String> names) {
+        Platform.runLater(() -> {
+            master.setAll(names == null ? java.util.List.of() : names);
+            if (!filtered.isEmpty()) results.getSelectionModel().select(0);
+        });
+    }
+
+    public void refreshKeepingFilter() {
+        Platform.runLater(() -> {
+            final String q = input.getText();
+            input.setText(q);
+            input.positionCaret(q == null ? 0 : q.length());
+            if (!filtered.isEmpty()) results.getSelectionModel().select(0);
+        });
+    }
+
+    public void setOnQuerySubmit(Consumer<String> cb)   { this.onQuerySubmit = cb; }
+    public void setOnActivateItem(Consumer<String> cb)  { this.onActivateItem = cb; }
 
     public void show() {
         Platform.runLater(() -> {
@@ -65,16 +123,6 @@ public class SearchWindow {
             input.selectAll();
         });
     }
-
-    public void hide() { Platform.runLater(stage::hide); }
-
-    public void toggle() {
-        Platform.runLater(() -> {
-            if (stage.isShowing()) hide();
-            else show();
-        });
-    }
-    public void setOnSearchSubmit(Consumer<String> onSearchSubmit) {
-        this.onSearchSubmit = onSearchSubmit;
-    }
+    public void hide()   { Platform.runLater(stage::hide); }
+    public void toggle() { Platform.runLater(() -> { if (stage.isShowing()) hide(); else show(); }); }
 }

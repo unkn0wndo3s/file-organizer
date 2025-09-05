@@ -1,6 +1,9 @@
 package fr.unkn0wndo3s.app;
 
+import java.awt.Desktop;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -22,16 +25,33 @@ public class Main extends Application {
     private ExecutorService ioPool;
     private LogWindow logWindow;
 
+    private final SearchIndex index = new SearchIndex();
+
     @Override
     public void start(Stage primaryStage) {
         Platform.setImplicitExit(false);
 
         searchWindow = new SearchWindow();
+        searchWindow.setOnQuerySubmit(q -> LogBus.log("[Search] " + q));
+        searchWindow.setOnActivateItem(name -> {
+            var p = index.resolve(name);
+            if (p == null) {
+                LogBus.log("[open] not found: " + name);
+                return;
+            }
+            try {
+                if (Desktop.isDesktopSupported()) {
+                    Desktop.getDesktop().open(p.toFile());
+                    LogBus.log("[open] " + p);
+                }
+            } catch (Exception ex) {
+                LogBus.log("[open] error: " + ex.getMessage());
+                ex.printStackTrace();
+            }
+        });
 
         logWindow = new LogWindow();
         LogBus.addListener(line -> logWindow.append(line));
-
-        searchWindow.setOnSearchSubmit(q -> LogBus.log("[Search] " + q));
 
         hotkey = new WindowsHotkeyService(searchWindow::toggle);
         hotkey.start();
@@ -47,22 +67,25 @@ public class Main extends Application {
             return t;
         });
 
+        List<Path> ensured = new ArrayList<>();
         try {
             Path home = Path.of(System.getProperty("user.home"));
-            List<Path> ensured = DirectoryInitializer.ensureBaseAndFolders(home);
+            ensured = DirectoryInitializer.ensureBaseAndFolders(home);
             LogBus.log("[init] insured files :");
             ensured.forEach(p -> LogBus.log("  - " + p));
 
-            LogBus.log("[pin] qwick access (InvokeVerb through PowerShell) …");
+            LogBus.log("[pin] quick access (InvokeVerb) …");
             for (Path p : ensured) {
                 boolean ok = QuickAccessPinUtil.pin(p);
                 LogBus.log("  [" + (ok ? "OK" : "KO") + "] " + p);
             }
-
         } catch (Exception e) {
             LogBus.log("[init] error init/pin: " + e.getMessage());
             e.printStackTrace();
         }
+
+        final List<Path> destRoots = List.copyOf(ensured);
+        searchWindow.setItems(index.names());
 
         ioPool.submit(() -> {
             try {
@@ -82,8 +105,16 @@ public class Main extends Application {
                     LogBus.log(FileMover.movePath(entry.path()));
                     count[0]++;
                 });
+                LogBus.log("[scan] moved entries=" + count[0]);
 
-                LogBus.log("[scan] done. entries=" + count[0]);
+                rebuildIndexFrom(destRoots);
+
+                Platform.runLater(() -> {
+                    searchWindow.setItems(index.names());
+                    searchWindow.refreshKeepingFilter();
+                });
+
+                LogBus.log("[index] names=" + index.names().size());
             } catch (Exception e) {
                 LogBus.log("[scan] error: " + e.getMessage());
                 e.printStackTrace();
@@ -96,6 +127,21 @@ public class Main extends Application {
             try { LogBus.removeListener(line -> logWindow.append(line)); } catch (Throwable ignored) {}
         }));
     }
+
+    private void rebuildIndexFrom(List<Path> roots) {
+        index.clear();
+        for (Path root : roots) {
+            try {
+                if (!Files.isDirectory(root) || !Files.isReadable(root)) continue;
+                try (var stream = Files.list(root)) {
+                    stream.forEach(index::add);
+                }
+            } catch (Exception e) {
+                LogBus.log("[index] skip: " + root + " (" + e.getClass().getSimpleName() + ")");
+            }
+        }
+    }
+    
 
     public static void main(String[] args) {
         if (!System.getProperty("os.name", "").toLowerCase().contains("win")) {
