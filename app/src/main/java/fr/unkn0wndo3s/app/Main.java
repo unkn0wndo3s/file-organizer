@@ -1,3 +1,4 @@
+// app/src/main/java/fr/unkn0wndo3s/app/Main.java
 package fr.unkn0wndo3s.app;
 
 import java.awt.Desktop;
@@ -46,6 +47,20 @@ public class Main extends Application {
                 }
             } catch (Exception ex) {
                 LogBus.log("[open] error: " + ex.getMessage());
+                ex.printStackTrace();
+            }
+        });
+        searchWindow.setOnContextMenuItem(name -> {
+            var p = index.resolve(name);
+            if (p == null) {
+                LogBus.log("[open-folder] not found: " + name);
+                return;
+            }
+            try {
+                new ProcessBuilder("explorer.exe", "/select," + p.toString()).start();
+                LogBus.log("[open-folder] " + p);
+            } catch (Exception ex) {
+                LogBus.log("[open-folder] error: " + ex.getMessage());
                 ex.printStackTrace();
             }
         });
@@ -129,19 +144,21 @@ public class Main extends Application {
     }
 
     private void rebuildIndexFrom(List<Path> roots) {
-        index.clear();
-        for (Path root : roots) {
-            try {
+        try {
+            index.clear();
+            for (Path root : roots) {
                 if (!Files.isDirectory(root) || !Files.isReadable(root)) continue;
                 try (var stream = Files.list(root)) {
                     stream.forEach(index::add);
+                } catch (Exception e) {
+                    LogBus.log("[index] skip: " + root + " (" + e.getClass().getSimpleName() + ")");
                 }
-            } catch (Exception e) {
-                LogBus.log("[index] skip: " + root + " (" + e.getClass().getSimpleName() + ")");
             }
+        } catch (Exception ex) {
+            LogBus.log("[index] rebuild error: " + ex.getMessage());
+            ex.printStackTrace();
         }
     }
-    
 
     public static void main(String[] args) {
         if (!System.getProperty("os.name", "").toLowerCase().contains("win")) {

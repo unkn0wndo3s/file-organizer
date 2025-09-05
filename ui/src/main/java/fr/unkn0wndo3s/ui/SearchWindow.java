@@ -1,3 +1,4 @@
+// ui/src/main/java/fr/unkn0wndo3s/ui/SearchWindow.java
 package fr.unkn0wndo3s.ui;
 
 import java.util.Collection;
@@ -11,7 +12,9 @@ import javafx.collections.transformation.FilteredList;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Scene;
+import javafx.scene.control.ContextMenu;
 import javafx.scene.control.ListView;
+import javafx.scene.control.MenuItem;
 import javafx.scene.control.TextField;
 import javafx.scene.input.KeyCode;
 import javafx.scene.layout.VBox;
@@ -29,6 +32,7 @@ public class SearchWindow {
 
     private Consumer<String> onQuerySubmit;
     private Consumer<String> onActivateItem;
+    private Consumer<String> onContextMenuItem;
 
     public SearchWindow() {
         stage = new Stage(StageStyle.UNDECORATED);
@@ -46,6 +50,15 @@ public class SearchWindow {
                 }
             }
         });
+
+        ContextMenu menu = new ContextMenu();
+        MenuItem openFolder = new MenuItem("Ouvrir l’emplacement du fichier");
+        openFolder.setOnAction(ev -> {
+            String sel = results.getSelectionModel().getSelectedItem();
+            if (sel != null && onContextMenuItem != null) onContextMenuItem.accept(sel);
+        });
+        menu.getItems().add(openFolder);
+        results.setContextMenu(menu);
 
         input = new TextField();
         input.setPromptText("Write to search");
@@ -114,6 +127,7 @@ public class SearchWindow {
 
     public void setOnQuerySubmit(Consumer<String> cb)   { this.onQuerySubmit = cb; }
     public void setOnActivateItem(Consumer<String> cb)  { this.onActivateItem = cb; }
+    public void setOnContextMenuItem(Consumer<String> cb) { this.onContextMenuItem = cb; }
 
     public void show() {
         Platform.runLater(() -> {

@@ -1,3 +1,4 @@
+// app/src/main/java/fr/unkn0wndo3s/app/SearchIndex.java
 package fr.unkn0wndo3s.app;
 
 import java.nio.file.Path;
