@@ -77,7 +77,7 @@ public final class TrayUtil {
         g.setColor(new Color(33, 33, 33, 255));
         g.fillRoundRect(0, 0, s, s, 6, 6);
         g.setStroke(new BasicStroke(1.7f));
-        g.setColor(Color.WHITE);
+        g.setColor(Color.black);
         g.drawOval(3, 3, 8, 8);
         g.drawLine(9, 9, 13, 13);
         g.dispose();

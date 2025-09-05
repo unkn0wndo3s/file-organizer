@@ -28,6 +28,7 @@ public class SearchWindow {
 
         input = new TextField();
         input.setPromptText("Tape pour chercher…");
+        input.getStyleClass().add("search-input"); // classe CSS spécifique
         input.setOnKeyPressed(e -> {
             if (e.getCode() == KeyCode.ESCAPE) hide();
             if (e.getCode() == KeyCode.ENTER) {
@@ -43,28 +44,16 @@ public class SearchWindow {
         VBox root = new VBox(10, input, results);
         root.setPadding(new Insets(14));
         root.setAlignment(Pos.CENTER_LEFT);
-        root.setStyle("-fx-background-color: #1f1f1f; -fx-background-radius: 8;");
-
-        input.setStyle("""
-    -fx-background-radius: 6;
-    -fx-background-color: #2a2a2a;    /* fond sombre */
-    -fx-control-inner-background: #2a2a2a;
-    -fx-text-fill: white;             /* texte tapé */
-    -fx-prompt-text-fill: #888;       /* placeholder */
-    -fx-caret-color: white;           /* curseur */
-    -fx-highlight-fill: #3a6ea5;      /* sélection */
-    -fx-highlight-text-fill: white;   /* texte sélectionné */
-    -fx-border-color: #3a3a3a;
-    -fx-border-radius: 6;
-    -fx-background-insets: 0;
-""");
-
-
-results.setStyle("-fx-background-radius: 6; -fx-control-inner-background: #2a2a2a; -fx-text-fill: white;");
-
+        root.getStyleClass().add("search-root"); // style global de la box
 
         Scene scene = new Scene(root, 680, 320);
         scene.setFill(null);
+
+        // Charger notre CSS
+        scene.getStylesheets().add(
+            getClass().getResource("/dark.css").toExternalForm()
+        );
+
         stage.setScene(scene);
         stage.setOnShown(e -> stage.centerOnScreen());
     }
@@ -87,7 +76,7 @@ results.setStyle("-fx-background-radius: 6; -fx-control-inner-background: #2a2a2
         });
     }
 
-    // ---- ajoutée : callback quand l’utilisateur presse Entrée
+    // callback quand l’utilisateur presse Entrée
     public void setOnSearchSubmit(Consumer<String> onSearchSubmit) {
         this.onSearchSubmit = onSearchSubmit;
     }

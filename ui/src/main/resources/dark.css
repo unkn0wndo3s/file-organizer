@@ -1,0 +1,32 @@
+/* Fond global */
+.search-root {
+    -fx-background-color: #1f1f1f;
+    -fx-background-radius: 8;
+}
+
+/* Champ input */
+.search-input {
+    -fx-background-color: #2a2a2a;
+    -fx-background-radius: 6;
+    -fx-background-insets: 0;
+    -fx-prompt-text-fill: #888;
+    -fx-caret-color: white;
+    -fx-highlight-fill: #3a6ea5;
+    -fx-highlight-text-fill: white;
+    -fx-border-color: #3a3a3a;
+    -fx-border-radius: 6;
+}
+
+/* texte tapé (forcé) */
+.search-input,
+.search-input .text {
+    -fx-text-fill: white;
+}
+
+/* ListView résultat */
+.list-view {
+    -fx-background-radius: 6;
+    -fx-background-insets: 0;
+    -fx-control-inner-background: #2a2a2a;
+    -fx-text-fill: white;
+}
