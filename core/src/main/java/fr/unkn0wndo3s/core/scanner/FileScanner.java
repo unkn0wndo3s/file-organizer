@@ -20,27 +20,17 @@ public final class FileScanner {
         List<FileRecord> out = new ArrayList<>();
         for (Path root : roots) {
             if (root == null || !Files.isDirectory(root)) continue;
-
             Files.walkFileTree(root, new SimpleFileVisitor<>() {
                 @Override public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) {
-                    try {
-                        if (isHiddenOrSystem(dir)) return FileVisitResult.SKIP_SUBTREE;
-                    } catch (IOException ignored) {}
+                    try { if (Files.isHidden(dir)) return FileVisitResult.SKIP_SUBTREE; } catch (IOException ignored) {}
                     return FileVisitResult.CONTINUE;
                 }
-
                 @Override public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
                     if (!attrs.isRegularFile()) return FileVisitResult.CONTINUE;
-                    try {
-                        if (isHiddenOrSystem(file)) return FileVisitResult.CONTINUE;
-                    } catch (IOException ignored) {}
-
+                    try { if (Files.isHidden(file)) return FileVisitResult.CONTINUE; } catch (IOException ignored) {}
                     String name = file.getFileName().toString();
                     String ext = extensionLower(name);
-                    long size = attrs.size();
-                    long lm = attrs.lastModifiedTime().toMillis();
-
-                    out.add(new FileRecord(file, name, ext, size, lm));
+                    out.add(new FileRecord(file, name, ext, attrs.size(), attrs.lastModifiedTime().toMillis()));
                     return FileVisitResult.CONTINUE;
                 }
             });

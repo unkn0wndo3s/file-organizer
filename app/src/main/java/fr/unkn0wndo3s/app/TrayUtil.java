@@ -18,24 +18,28 @@ import javafx.application.Platform;
 public final class TrayUtil {
     private TrayUtil() {}
 
-    public static void installTray(SearchWindow searchWindow, Runnable onQuit) {
+    public static void installTray(SearchWindow searchWindow, Runnable onQuit, Runnable onToggleConsole) {
         if (!SystemTray.isSupported()) {
-            System.err.println("SystemTray non supporté sur cette machine.");
+            System.err.println("SystemTray non supporté.");
             return;
         }
-
-        // Petite icône 16x16 générée à la volée (évite de gérer un fichier .ico)
         Image icon = makeIcon();
 
         PopupMenu menu = new PopupMenu();
 
-        MenuItem open = new MenuItem("Ouvrir (Ctrl+Espace)");
-        open.addActionListener(e -> Platform.runLater(searchWindow::show));
-        menu.add(open);
+        if (searchWindow != null) {
+            MenuItem open = new MenuItem("Ouvrir (Ctrl+Espace)");
+            open.addActionListener(e -> Platform.runLater(searchWindow::show));
+            menu.add(open);
 
-        MenuItem hide = new MenuItem("Masquer");
-        hide.addActionListener(e -> Platform.runLater(searchWindow::hide));
-        menu.add(hide);
+            MenuItem hide = new MenuItem("Masquer");
+            hide.addActionListener(e -> Platform.runLater(searchWindow::hide));
+            menu.add(hide);
+        }
+
+        MenuItem console = new MenuItem("Console");
+        console.addActionListener(e -> { if (onToggleConsole != null) onToggleConsole.run(); });
+        menu.add(console);
 
         menu.addSeparator();
 
@@ -49,8 +53,9 @@ public final class TrayUtil {
 
         TrayIcon trayIcon = new TrayIcon(icon, "File Organizer", menu);
         trayIcon.setImageAutoSize(true);
-        trayIcon.addActionListener(e -> Platform.runLater(searchWindow::toggle)); // clic simple = toggle
-
+        if (searchWindow != null) {
+            trayIcon.addActionListener(e -> Platform.runLater(searchWindow::toggle)); // clic = toggle barre
+        }
         try {
             SystemTray.getSystemTray().add(trayIcon);
         } catch (AWTException ex) {
@@ -59,9 +64,8 @@ public final class TrayUtil {
     }
 
     private static TrayIcon findTray(Image icon) {
-        for (TrayIcon ti : SystemTray.getSystemTray().getTrayIcons()) {
+        for (TrayIcon ti : SystemTray.getSystemTray().getTrayIcons())
             if (ti.getImage() == icon) return ti;
-        }
         return null;
     }
 
@@ -70,10 +74,8 @@ public final class TrayUtil {
         BufferedImage img = new BufferedImage(s, s, BufferedImage.TYPE_INT_ARGB);
         Graphics2D g = img.createGraphics();
         g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-        // pastille sombre
         g.setColor(new Color(33, 33, 33, 255));
         g.fillRoundRect(0, 0, s, s, 6, 6);
-        // loupe blanche minimaliste
         g.setStroke(new BasicStroke(1.7f));
         g.setColor(Color.WHITE);
         g.drawOval(3, 3, 8, 8);
