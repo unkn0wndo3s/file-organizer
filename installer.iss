@@ -1,50 +1,60 @@
+; ===== Inno Setup Script for File Organizer =====
+; - Installe l’app-image jpackage
+; - Ajoute un raccourci Menu Démarrer + (optionnel) Bureau
+; - Case "Lancer au démarrage de Windows" (Startup)
+
+#define AppName "File Organizer"
+#define AppExe  "File Organizer.exe"
+#define AppVersion "1.0.0"
+#define Publisher "Unkn0wndo3s"
+
+; Dossier SOURCE de l'app-image générée par jpackage
+; Exemple: si jpackage a créé .\File Organizer\ avec "File Organizer.exe" dedans :
+#define AppImageDir "File Organizer"
+
 [Setup]
-AppId={{1C4B88E5-19B0-4B6B-9C41-1E4C5B3B7B91}
-AppName=FileOrganizer
-AppVersion=1.0
-AppPublisher=unkn0wndo3s
-DefaultDirName={autopf}\FileOrganizer
-DefaultGroupName=FileOrganizer
-OutputDir=Output
+AppId={{5A3D9F1B-9C1A-4F4B-9A2B-FA7F9C2DE4E1}
+AppName={#AppName}
+AppVersion={#AppVersion}
+AppPublisher={#Publisher}
+DefaultDirName={autopf}\{#AppName}
+DefaultGroupName={#AppName}
+DisableDirPage=no
+DisableProgramGroupPage=no
 OutputBaseFilename=FileOrganizer-Setup
-Compression=lzma
+OutputDir=.
+Compression=lzma2
 SolidCompression=yes
 ArchitecturesInstallIn64BitMode=x64
 PrivilegesRequired=admin
-PrivilegesRequiredOverridesAllowed=dialog
-DisableProgramGroupPage=yes
+WizardStyle=modern
+SetupIconFile=fileorganizer.ico
 
 [Languages]
-Name: "en"; MessagesFile: "compiler:Default.isl"
+Name: "french"; MessagesFile: "compiler:Languages\French.isl"
 
 [Tasks]
-Name: "startup"; Description: "Launch at Windows startup"; Flags: unchecked
-Name: "desktopicon"; Description: "Create a desktop shortcut"; Flags: unchecked
+; Case à cocher: Lancer au démarrage
+Name: "startup"; Description: "Lancer {#AppName} au démarrage de Windows"; Flags: unchecked
+; (Optionnel) Raccourci Bureau
+Name: "desktopicon"; Description: "Créer un raccourci sur le Bureau"; Flags: unchecked
 
 [Files]
-Source: "dist\FileOrganizer\*"; DestDir: "{app}"; Flags: recursesubdirs ignoreversion
+; Copie TOUT le contenu de l’app-image dans {app}
+Source: "{#AppImageDir}\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{group}\FileOrganizer"; Filename: "{code:GetAppExe}"
-Name: "{commondesktop}\FileOrganizer"; Filename: "{code:GetAppExe}"; Tasks: desktopicon
+; Menu Démarrer
+Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExe}"
+; Bureau (optionnel)
+Name: "{commondesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; Tasks: desktopicon
+; Dossier Démarrage (créé seulement si la case 'startup' est cochée)
+Name: "{userstartup}\{#AppName}"; Filename: "{app}\{#AppExe}"; WorkingDir: "{app}"; Tasks: startup
 
 [Run]
-Filename: "{code:GetAppExe}"; Flags: nowait postinstall skipifsilent
+; Lancer l’appli à la fin de l’install (optionnel)
+Filename: "{app}\{#AppExe}"; Description: "Lancer {#AppName} maintenant"; Flags: nowait postinstall skipifsilent
 
-[Registry]
-Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "FileOrganizer"; ValueData: """{code:GetAppExe}"""; Tasks: startup; Check: not IsAdminInstallMode
-Root: HKLM; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "FileOrganizer"; ValueData: """{code:GetAppExe}"""; Tasks: startup; Check: IsAdminInstallMode
-
-[Code]
-function GetAppExe(Param: string): string;
-var p: string;
-begin
-  p := ExpandConstant('{app}\bin\FileOrganizer.exe');
-  if FileExists(p) then
-    Result := p
-  else
-  begin
-    p := ExpandConstant('{app}\FileOrganizer.exe');
-    Result := p;
-  end;
-end;
+[UninstallDelete]
+; Nettoyage du raccourci Startup si présent
+Type: files; Name: "{userstartup}\{#AppName}.lnk"
