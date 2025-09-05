@@ -16,7 +16,6 @@ DisableProgramGroupPage=yes
 
 [Languages]
 Name: "en"; MessagesFile: "compiler:Default.isl"
-Name: "fr"; MessagesFile: "compiler:Languages\French.isl"
 
 [Tasks]
 Name: "startup"; Description: "Launch at Windows startup"; Flags: unchecked
@@ -26,25 +25,26 @@ Name: "desktopicon"; Description: "Create a desktop shortcut"; Flags: unchecked
 Source: "dist\FileOrganizer\*"; DestDir: "{app}"; Flags: recursesubdirs ignoreversion
 
 [Icons]
-Name: "{group}\FileOrganizer"; Filename: "{app}\bin\FileOrganizer.exe"
-Name: "{commondesktop}\FileOrganizer"; Filename: "{app}\bin\FileOrganizer.exe"; Tasks: desktopicon
+Name: "{group}\FileOrganizer"; Filename: "{code:GetAppExe}"
+Name: "{commondesktop}\FileOrganizer"; Filename: "{code:GetAppExe}"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\bin\FileOrganizer.exe"; Description: "Run FileOrganizer now"; Flags: nowait postinstall skipifsilent
+Filename: "{code:GetAppExe}"; Flags: nowait postinstall skipifsilent
 
 [Registry]
-; Per-user startup (si install per-user)
-Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; \
-  ValueName: "FileOrganizer"; ValueData: """{app}\bin\FileOrganizer.exe"""; \
-  Tasks: startup; Check: not IsAdminInstallMode
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "FileOrganizer"; ValueData: """{code:GetAppExe}"""; Tasks: startup; Check: not IsAdminInstallMode
+Root: HKLM; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "FileOrganizer"; ValueData: """{code:GetAppExe}"""; Tasks: startup; Check: IsAdminInstallMode
 
-; Machine-wide startup (si install tous les utilisateurs)
-Root: HKLM; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; \
-  ValueName: "FileOrganizer"; ValueData: """{app}\bin\FileOrganizer.exe"""; \
-  Tasks: startup; Check: IsAdminInstallMode
-
-; Cleanup à la désinstallation
-Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: none; \
-  ValueName: "FileOrganizer"; Flags: deletevalue uninsdeletevalue
-Root: HKLM; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: none; \
-  ValueName: "FileOrganizer"; Flags: deletevalue uninsdeletevalue
+[Code]
+function GetAppExe(Param: string): string;
+var p: string;
+begin
+  p := ExpandConstant('{app}\bin\FileOrganizer.exe');
+  if FileExists(p) then
+    Result := p
+  else
+  begin
+    p := ExpandConstant('{app}\FileOrganizer.exe');
+    Result := p;
+  end;
+end;
