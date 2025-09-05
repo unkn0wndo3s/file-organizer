@@ -21,25 +21,16 @@ public final class QuickAccessPinUtil {
 
     /** Épingle dans Accès rapide. Marche pour dossier OU fichier. */
     public static boolean pin(Path item) {
+        if (!isWindows() || item == null) return false;
+        if (isPinned(item)) return true;           // déjà épinglé → on ne fait rien
         return invokeVerbOnParent(item, "pintohome");
-    }
-
-    /** Désépingle d’Accès rapide. Marche pour dossier OU fichier. */
-    public static boolean unpin(Path item) {
-        return invokeVerbOnParent(item, "unpinfromhome");
     }
 
     /** Idempotent : n’épingle que si pas déjà épinglé. */
     public static boolean ensurePinned(Path item) {
-        if (isPinned(item)) return true;
         return pin(item);
     }
 
-    /** Idempotent : ne désépingle que si présent. */
-    public static boolean ensureUnpinned(Path item) {
-        if (!isPinned(item)) return true;
-        return unpin(item);
-    }
 
     /** Liste *toutes* les entrées visibles dans Quick Access (pinned + parfois “frequent”). */
     public static List<String> listQuickAccessItems() {

@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+import fr.unkn0wndo3s.core.fs.FileMover;
 import fr.unkn0wndo3s.core.init.DirectoryInitializer;
 import fr.unkn0wndo3s.core.scanner.FileScanner;
 import fr.unkn0wndo3s.ui.SearchWindow;
@@ -47,30 +48,23 @@ public class Main extends Application {
             return t;
         });
 
-        // ---- INIT + DE-PIN Quick Access ----
         try {
             Path home = Path.of(System.getProperty("user.home"));
             List<Path> ensured = DirectoryInitializer.ensureBaseAndFolders(home);
             LogBus.log("[init] dossiers assurés :");
             ensured.forEach(p -> LogBus.log("  - " + p));
 
-            LogBus.log("[unpin] Accès rapide (InvokeVerb via PowerShell) …");
+            LogBus.log("[pin] qwick access (InvokeVerb via PowerShell) …");
             for (Path p : ensured) {
-                boolean ok = QuickAccessPinUtil.unpin(p);
+                boolean ok = QuickAccessPinUtil.pin(p);
                 LogBus.log("  [" + (ok ? "OK" : "KO") + "] " + p);
             }
 
-            // Si rien ne bouge et que tu veux TOUT vider (pins + récents) :
-            // boolean wiped = QuickAccessPinUtil.resetQuickAccess();
-            // LogBus.log("[unpin] reset total Accès rapide: " + (wiped ? "OK" : "KO"));
-
         } catch (Exception e) {
-            LogBus.log("[init] erreur init/unpin: " + e.getMessage());
+            LogBus.log("[init] erreur init/pin: " + e.getMessage());
             e.printStackTrace();
         }
-        // ------------------------------------
 
-        // ---- SCAN ASYNC (Downloads, top-level only) ----
         ioPool.submit(() -> {
             try {
                 var scanner = new FileScanner();
@@ -86,6 +80,7 @@ public class Main extends Application {
                     } else {
                         LogBus.log("[File]   " + entry.path());
                     }
+                    LogBus.log(FileMover.movePath(entry.path()));
                     count[0]++;
                 });
 

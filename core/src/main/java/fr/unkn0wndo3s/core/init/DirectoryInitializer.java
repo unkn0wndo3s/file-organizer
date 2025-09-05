@@ -29,7 +29,9 @@ public final class DirectoryInitializer {
                 home.resolve("Pictures"),
                 home.resolve("Videos"),
                 home.resolve("Music"),
-                home.resolve("Folders") // dossier supplémentaire demandé
+                home.resolve("Folders"),
+                home.resolve("Executables"),
+                home.resolve("Archives")
         );
 
         List<Path> ensured = new ArrayList<>(targets.size());
