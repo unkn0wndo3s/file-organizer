@@ -52,7 +52,7 @@ public class SearchWindow {
         });
 
         ContextMenu menu = new ContextMenu();
-        MenuItem openFolder = new MenuItem("Ouvrir l’emplacement du fichier");
+        MenuItem openFolder = new MenuItem("Open the file/folder location");
         openFolder.setOnAction(ev -> {
             String sel = results.getSelectionModel().getSelectedItem();
             if (sel != null && onContextMenuItem != null) onContextMenuItem.accept(sel);
