@@ -16,23 +16,16 @@ import java.util.stream.Collectors;
 public final class QuickAccessPinUtil {
 
     private QuickAccessPinUtil() {}
-
-    // --- Public API ---
-
-    /** Épingle dans Accès rapide. Marche pour dossier OU fichier. */
     public static boolean pin(Path item) {
         if (!isWindows() || item == null) return false;
-        if (isPinned(item)) return true;           // déjà épinglé → on ne fait rien
+        if (isPinned(item)) return true;
         return invokeVerbOnParent(item, "pintohome");
     }
 
-    /** Idempotent : n’épingle que si pas déjà épinglé. */
     public static boolean ensurePinned(Path item) {
         return pin(item);
     }
 
-
-    /** Liste *toutes* les entrées visibles dans Quick Access (pinned + parfois “frequent”). */
     public static List<String> listQuickAccessItems() {
         String script = String.join(" ; ",
             "$sh = New-Object -ComObject Shell.Application",
@@ -46,7 +39,6 @@ public final class QuickAccessPinUtil {
         }
     }
 
-    /** True si le chemin exact est présent dans Quick Access (comparaison insensible à la casse). */
     public static boolean isPinned(Path item) {
         Path abs = toAbs(item);
         String want = abs.toString();
@@ -56,7 +48,6 @@ public final class QuickAccessPinUtil {
         return false;
     }
 
-    /** RESET TOTAL : efface pins + historique et relance Explorer. */
     public static boolean resetQuickAccess() {
         if (!isWindows()) return false;
         boolean ok1 = deleteFileQuiet(findAutoDestPath());
@@ -65,13 +56,6 @@ public final class QuickAccessPinUtil {
         return ok1 && ok2 && ok3;
     }
 
-    // --- Impl ---
-
-    /**
-     * Applique le verbe shell sur l’élément en passant par son parent:
-     * parent = Shell.NameSpace(dir), item = parent.ParseName(name), item.InvokeVerb(verb)
-     * → fonctionne pour dossiers et fichiers.
-     */
     private static boolean invokeVerbOnParent(Path item, String verb) {
         if (!isWindows()) return false;
         Objects.requireNonNull(item, "item");
@@ -94,11 +78,8 @@ public final class QuickAccessPinUtil {
         );
 
         int code = runPs(ps);
-        // Explorer retourne parfois 1 sans stderr pour InvokeVerb → on tolère 0 et 1
         return code == 0 || code == 1;
     }
-
-    // --- Utils ---
 
     private static boolean isWindows() {
         return System.getProperty("os.name","").toLowerCase().contains("win");
@@ -120,9 +101,8 @@ public final class QuickAccessPinUtil {
         pb.redirectErrorStream(true);
         try {
             Process p = pb.start();
-            // On draine la sortie sinon certains builds de Win11 bloquent tant que le flux n’est pas lu
             try (BufferedReader r = new BufferedReader(new InputStreamReader(p.getInputStream(), StandardCharsets.UTF_8))) {
-                while (r.readLine() != null) { /* drain */ }
+                while (r.readLine() != null) { }
             }
             return p.waitFor();
         } catch (Exception e) {
@@ -142,7 +122,6 @@ public final class QuickAccessPinUtil {
             while ((line = r.readLine()) != null) lines.add(line);
         }
         p.waitFor();
-        // Nettoyage basique des vides
         return lines.stream().filter(s -> s != null && !s.isBlank()).collect(Collectors.toList());
     }
 
@@ -162,14 +141,13 @@ public final class QuickAccessPinUtil {
         try { return Files.deleteIfExists(p); } catch (IOException e) { return false; }
     }
 
-    /** Commande via cmd.exe. */
     private static int runCmd(String cmdLine) {
         ProcessBuilder pb = new ProcessBuilder("cmd.exe", "/d", "/c", cmdLine);
         pb.redirectErrorStream(true);
         try {
             Process p = pb.start();
             try (BufferedReader r = new BufferedReader(new InputStreamReader(p.getInputStream(), StandardCharsets.UTF_8))) {
-                while (r.readLine() != null) { /* drain */ }
+                while (r.readLine() != null) {  }
             }
             return p.waitFor();
         } catch (Exception e) {

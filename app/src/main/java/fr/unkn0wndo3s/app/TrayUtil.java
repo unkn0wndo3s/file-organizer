@@ -20,7 +20,7 @@ public final class TrayUtil {
 
     public static void installTray(SearchWindow searchWindow, Runnable onQuit, Runnable onToggleConsole) {
         if (!SystemTray.isSupported()) {
-            System.err.println("SystemTray non supporté.");
+            System.err.println("SystemTray not supported.");
             return;
         }
         Image icon = makeIcon();
@@ -28,22 +28,22 @@ public final class TrayUtil {
         PopupMenu menu = new PopupMenu();
 
         if (searchWindow != null) {
-            MenuItem open = new MenuItem("Ouvrir (Ctrl+Espace)");
+            MenuItem open = new MenuItem("Open (Ctrl+Space)");
             open.addActionListener(e -> Platform.runLater(searchWindow::show));
             menu.add(open);
 
-            MenuItem hide = new MenuItem("Masquer");
+            MenuItem hide = new MenuItem("Hide");
             hide.addActionListener(e -> Platform.runLater(searchWindow::hide));
             menu.add(hide);
         }
 
-        MenuItem console = new MenuItem("Console");
+        MenuItem console = new MenuItem("Consol");
         console.addActionListener(e -> { if (onToggleConsole != null) onToggleConsole.run(); });
         menu.add(console);
 
         menu.addSeparator();
 
-        MenuItem quit = new MenuItem("Quitter");
+        MenuItem quit = new MenuItem("Quit");
         quit.addActionListener(e -> {
             if (onQuit != null) onQuit.run();
             SystemTray.getSystemTray().remove(findTray(icon));
@@ -54,7 +54,7 @@ public final class TrayUtil {
         TrayIcon trayIcon = new TrayIcon(icon, "File Organizer", menu);
         trayIcon.setImageAutoSize(true);
         if (searchWindow != null) {
-            trayIcon.addActionListener(e -> Platform.runLater(searchWindow::toggle)); // clic = toggle barre
+            trayIcon.addActionListener(e -> Platform.runLater(searchWindow::toggle));
         }
         try {
             SystemTray.getSystemTray().add(trayIcon);

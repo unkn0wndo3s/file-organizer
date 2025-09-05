@@ -14,7 +14,7 @@ public class LogWindow {
 
     public LogWindow() {
         stage = new Stage(StageStyle.UTILITY);
-        stage.setTitle("Console");
+        stage.setTitle("Consol");
         area = new TextArea();
         area.setEditable(false);
         area.setWrapText(false);

@@ -27,8 +27,8 @@ public class SearchWindow {
         stage.setAlwaysOnTop(true);
 
         input = new TextField();
-        input.setPromptText("Tape pour chercher…");
-        input.getStyleClass().add("search-input"); // classe CSS spécifique
+        input.setPromptText("Write to search");
+        input.getStyleClass().add("search-input");
         input.setOnKeyPressed(e -> {
             if (e.getCode() == KeyCode.ESCAPE) hide();
             if (e.getCode() == KeyCode.ENTER) {
@@ -44,12 +44,11 @@ public class SearchWindow {
         VBox root = new VBox(10, input, results);
         root.setPadding(new Insets(14));
         root.setAlignment(Pos.CENTER_LEFT);
-        root.getStyleClass().add("search-root"); // style global de la box
+        root.getStyleClass().add("search-root");
 
         Scene scene = new Scene(root, 680, 320);
         scene.setFill(null);
 
-        // Charger notre CSS
         scene.getStylesheets().add(
             getClass().getResource("/dark.css").toExternalForm()
         );
@@ -75,8 +74,6 @@ public class SearchWindow {
             else show();
         });
     }
-
-    // callback quand l’utilisateur presse Entrée
     public void setOnSearchSubmit(Consumer<String> onSearchSubmit) {
         this.onSearchSubmit = onSearchSubmit;
     }

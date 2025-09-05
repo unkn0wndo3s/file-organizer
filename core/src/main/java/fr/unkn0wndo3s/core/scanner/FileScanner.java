@@ -15,7 +15,6 @@ import fr.unkn0wndo3s.core.model.FsEntry;
 
 public final class FileScanner {
 
-    // --- Scan récursif complet (déjà existant) ---
     public List<FileRecord> scan(List<Path> roots) throws IOException {
         List<FileRecord> out = new ArrayList<>();
         for (Path root : roots) {
@@ -38,7 +37,6 @@ public final class FileScanner {
         return out;
     }
 
-    // --- Streaming récursif complet ---
     public void scanStream(List<Path> roots, Consumer<FileRecord> onFile) throws IOException {
         for (Path root : roots) {
             if (root == null || !Files.isDirectory(root)) continue;
@@ -59,7 +57,6 @@ public final class FileScanner {
         }
     }
 
-    // --- NEW: scan top-level only ---
     public List<FsEntry> scanTopLevel(List<Path> roots) throws IOException {
         List<FsEntry> out = new ArrayList<>();
         for (Path root : roots) {
@@ -83,7 +80,6 @@ public final class FileScanner {
         return out;
     }
 
-    // --- NEW: streaming top-level only ---
     public void scanTopLevelStream(List<Path> roots, Consumer<FsEntry> onEntry) throws IOException {
         for (Path root : roots) {
             if (root == null || !Files.isDirectory(root)) continue;

@@ -18,10 +18,8 @@ public final class LogBus {
     public static void log(String line) {
         String ts = LocalTime.now().format(HHMMSS);
         String msg = "[" + ts + "] " + line;
-        // Console immédiate
         System.out.println(msg);
         System.out.flush();
-        // UI listeners
         for (var l : listeners) {
             try { l.accept(msg); } catch (Throwable ignored) {}
         }

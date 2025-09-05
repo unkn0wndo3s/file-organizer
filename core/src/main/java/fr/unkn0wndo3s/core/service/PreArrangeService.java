@@ -26,7 +26,6 @@ public final class PreArrangeService {
         for (FileRecord r : found) {
             plans.add(planner.plan(r));
         }
-        // tri : plus récents en premier
         plans.sort(Comparator.comparingLong((FilePlan p) -> p.record().lastModifiedEpochMillis()).reversed());
         return plans;
     }

@@ -29,7 +29,6 @@ public class Main extends Application {
         searchWindow = new SearchWindow();
 
         logWindow = new LogWindow();
-        logWindow.show();
         LogBus.addListener(line -> logWindow.append(line));
 
         searchWindow.setOnSearchSubmit(q -> LogBus.log("[Search] " + q));
@@ -51,17 +50,17 @@ public class Main extends Application {
         try {
             Path home = Path.of(System.getProperty("user.home"));
             List<Path> ensured = DirectoryInitializer.ensureBaseAndFolders(home);
-            LogBus.log("[init] dossiers assurés :");
+            LogBus.log("[init] insured files :");
             ensured.forEach(p -> LogBus.log("  - " + p));
 
-            LogBus.log("[pin] qwick access (InvokeVerb via PowerShell) …");
+            LogBus.log("[pin] qwick access (InvokeVerb through PowerShell) …");
             for (Path p : ensured) {
                 boolean ok = QuickAccessPinUtil.pin(p);
                 LogBus.log("  [" + (ok ? "OK" : "KO") + "] " + p);
             }
 
         } catch (Exception e) {
-            LogBus.log("[init] erreur init/pin: " + e.getMessage());
+            LogBus.log("[init] error init/pin: " + e.getMessage());
             e.printStackTrace();
         }
 
@@ -100,7 +99,7 @@ public class Main extends Application {
 
     public static void main(String[] args) {
         if (!System.getProperty("os.name", "").toLowerCase().contains("win")) {
-            System.err.println("Hotkey global (Windows) seulement dans cette implémentation.");
+            System.err.println("Global hotkey (Windows) only in this implementation.");
         }
         launch(args);
     }

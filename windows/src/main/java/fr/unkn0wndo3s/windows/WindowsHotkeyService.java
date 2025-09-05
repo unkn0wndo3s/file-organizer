@@ -15,9 +15,9 @@ public class WindowsHotkeyService {
     private Thread loopThread;
     private volatile boolean running = false;
 
-    private static final int HOTKEY_ID   = 0xBEEF;  // id arbitraire
-    private static final int MOD_CONTROL = 0x0002;  // Ctrl
-    private static final int VK_SPACE    = 0x20;    // Espace
+    private static final int HOTKEY_ID = 0xBEEF;
+    private static final int MOD_CONTROL = 0x0002;
+    private static final int VK_SPACE    = 0x20;
 
     public WindowsHotkeyService(HotkeyCallback callback) {
         this.callback = callback;

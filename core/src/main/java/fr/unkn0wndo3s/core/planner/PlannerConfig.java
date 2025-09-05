@@ -23,8 +23,6 @@ public final class PlannerConfig {
     public Path dirFor(Category c) { return roots.get(c); }
 
     public static PlannerConfig windowsDefaults(Path userHome) {
-        // Attention: les noms de dossiers Windows peuvent être localisés.
-        // On part sur "Documents", "Pictures", etc. Ajustables plus tard via UI.
         return new PlannerConfig(
                 userHome.resolve("Documents"),
                 userHome.resolve("Pictures"),

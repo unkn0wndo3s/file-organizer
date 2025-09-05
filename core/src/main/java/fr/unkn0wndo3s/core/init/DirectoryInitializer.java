@@ -10,18 +10,9 @@ public final class DirectoryInitializer {
 
     private DirectoryInitializer() {}
 
-    /**
-     * Crée les dossiers de base s'ils n'existent pas, + "Folders" à côté.
-     * On travaille sous le HOME utilisateur :
-     *   - Desktop, Downloads, Documents, Pictures, Videos, Music, Folders
-     *
-     * @return la liste des dossiers assurés (créés ou déjà existants)
-     */
     public static List<Path> ensureBaseAndFolders(Path home) throws IOException {
         if (home == null) throw new IllegalArgumentException("home is null");
 
-        // Noms standards (non localisés). Si ta machine est localisée,
-        // on peut plus tard détecter via Known Folders (CSIDL) côté Win32.
         List<Path> targets = List.of(
                 home.resolve("Desktop"),
                 home.resolve("Downloads"),

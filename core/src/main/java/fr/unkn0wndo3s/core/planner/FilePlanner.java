@@ -24,7 +24,6 @@ public final class FilePlanner {
     }
 
     private String safeName(String name) {
-        // Simple normalisation (évite collisions à gérer plus tard)
         return name.replaceAll("[\\\\/:*?\"<>|]", "_");
     }
 }
