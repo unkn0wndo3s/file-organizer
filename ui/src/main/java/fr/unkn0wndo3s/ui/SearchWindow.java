@@ -52,7 +52,7 @@ public class SearchWindow {
         });
 
         ContextMenu menu = new ContextMenu();
-        MenuItem openFolder = new MenuItem("Open the file/folder location");
+        MenuItem openFolder = new MenuItem("Reveal in File Explorer");
         openFolder.setOnAction(ev -> {
             String sel = results.getSelectionModel().getSelectedItem();
             if (sel != null && onContextMenuItem != null) onContextMenuItem.accept(sel);
@@ -61,7 +61,7 @@ public class SearchWindow {
         results.setContextMenu(menu);
 
         input = new TextField();
-        input.setPromptText("Write to search");
+        input.setPromptText("Type to search");
         input.getStyleClass().add("search-input");
 
         input.textProperty().addListener((obs, oldV, v) -> {
@@ -114,6 +114,10 @@ public class SearchWindow {
             master.setAll(names == null ? java.util.List.of() : names);
             if (!filtered.isEmpty()) results.getSelectionModel().select(0);
         });
+    }
+
+    public void clearItems() {
+        Platform.runLater(() -> master.setAll(java.util.List.of()));
     }
 
     public void refreshKeepingFilter() {
