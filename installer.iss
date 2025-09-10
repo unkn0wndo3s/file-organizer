@@ -9,8 +9,8 @@
 #define Publisher "Unkn0wndo3s"
 
 ; Dossier SOURCE de l'app-image générée par jpackage
-; Exemple: si jpackage a créé .\File Organizer\ avec "File Organizer.exe" dedans :
-#define AppImageDir "File Organizer"
+; Exemple: si jpackage a créé .\dist\File Organizer\ avec "File Organizer.exe" dedans :
+#define AppImageDir "dist\File Organizer"
 
 [Setup]
 AppId={{5A3D9F1B-9C1A-4F4B-9A2B-FA7F9C2DE4E1}

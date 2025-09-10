@@ -3,6 +3,12 @@ cd /d "%~dp0"
 
 call mvn -pl app -am -DskipTests clean package
 
+REM Nettoyer le répertoire de destination s'il existe
+if exist "dist\File Organizer" (
+    echo Suppression du répertoire de destination existant...
+    rmdir /s /q "dist\File Organizer"
+)
+
 set FXJMODS=C:\javafx-jmods-20.0.2
 
 call "%JAVA_HOME%\bin\jpackage.exe" ^
@@ -15,10 +21,10 @@ call "%JAVA_HOME%\bin\jpackage.exe" ^
   --vendor "Unkn0wndo3s" ^
   --icon fileorganizer.ico ^
   --module-path "%FXJMODS%;%JAVA_HOME%\jmods" ^
-  --add-modules javafx.controls,javafx.fxml,javafx.graphics,javafx.base ^
+  --add-modules javafx.controls,javafx.fxml,javafx.graphics,javafx.base,java.desktop,java.base,java.logging ^
+  --java-options "-Djava.awt.headless=false" ^
+  --java-options "-Dfile.encoding=UTF-8" ^
   --dest dist ^
   --verbose
 
 call "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" ".\installer.iss"
-
-pause

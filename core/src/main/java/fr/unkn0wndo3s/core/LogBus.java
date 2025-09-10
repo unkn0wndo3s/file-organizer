@@ -1,4 +1,4 @@
-package fr.unkn0wndo3s.app;
+package fr.unkn0wndo3s.core;
 
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;

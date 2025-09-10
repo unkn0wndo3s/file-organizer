@@ -72,7 +72,7 @@
                 </configuration>
             </plugin>
 
-            <!-- Fat JAR exécutable -->
+            <!-- Fat JAR exécutable avec JavaFX -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-shade-plugin</artifactId>
@@ -100,6 +100,12 @@
                             <transformers>
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
                                     <mainClass>fr.unkn0wndo3s.app.Main</mainClass>
+                                    <manifestEntries>
+                                        <Permissions>all-permissions</Permissions>
+                                        <Codebase>*</Codebase>
+                                        <Application-Name>File Organizer</Application-Name>
+                                        <Application-Vendor>Unkn0wndo3s</Application-Vendor>
+                                    </manifestEntries>
                                 </transformer>
                             </transformers>
                         </configuration>

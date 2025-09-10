@@ -5,6 +5,7 @@ import java.util.Collection;
 import java.util.Objects;
 import java.util.function.Consumer;
 
+import fr.unkn0wndo3s.core.LogBus;
 import javafx.application.Platform;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
@@ -135,12 +136,30 @@ public class SearchWindow {
 
     public void show() {
         Platform.runLater(() -> {
-            if (!stage.isShowing()) stage.show();
+            if (!stage.isShowing()) {
+                stage.show();
+                LogBus.log("[search] Fenêtre affichée");
+            }
             stage.toFront();
             input.requestFocus();
             input.selectAll();
         });
     }
-    public void hide()   { Platform.runLater(stage::hide); }
-    public void toggle() { Platform.runLater(() -> { if (stage.isShowing()) hide(); else show(); }); }
+    public void hide() { 
+        Platform.runLater(() -> {
+            stage.hide();
+            LogBus.log("[search] Fenêtre masquée");
+        });
+    }
+    public void toggle() { 
+        Platform.runLater(() -> { 
+            if (stage.isShowing()) {
+                LogBus.log("[search] Toggle: masquage de la fenêtre");
+                hide(); 
+            } else {
+                LogBus.log("[search] Toggle: affichage de la fenêtre");
+                show(); 
+            }
+        }); 
+    }
 }
