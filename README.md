@@ -40,108 +40,148 @@ You need the **JavaFX SDK** (`.../lib` JARs) for development and the **JavaFX JM
 
 ---
 
-## Useful Commands
+## Quick Start
 
-### 1. Clean and install all modules
+### Prerequisites
 
+- **Java 17** (JDK 17)
+- **Maven 3.6+**
+- **JavaFX 20.0.2** (SDK + JMODs)
+- **Inno Setup 6** (for Windows installer)
+
+### Environment Setup
+
+1. Set `JAVA_HOME` to your JDK 17 installation
+2. Set `FXJMODS` to your JavaFX JMODs directory:
+   ```batch
+   set FXJMODS=C:\javafx-jmods-20.0.2
+   ```
+
+---
+
+## Build Commands
+
+### 1. Compile and Test (Development)
+
+```batch
+# Clean and compile all modules
+mvn -pl app -am -DskipTests clean package
+
+# Run tests with hotkey debugging
+.\test_hotkey.bat
 ```
-mvn -q -pl core,ui,windows,app -am clean install
-```
 
-# 2. Rebuild only the `app` module
+### 2. Build Executable JAR
 
-```
-mvn -q -pl app clean install
-```
-
-# 3. Run the application (JavaFX plugin)
-
-```
-cd app
-mvn javafx:run
-cd ..
-```
-
-# Build an Executable JAR
-
-```
+```batch
 mvn -pl app -am -DskipTests clean package
 ```
 
-This produces :
+**Output:** `app/target/file-organizer.jar`
 
-```
-app/target/file-organizer.jar
-```
+### 3. Build Standalone Executable
 
-Run it manually (requires JavaFX runtime on the module path):
-
-```
-java --module-path "C:\javafx-sdk-20.0.2\lib" ^
-     --add-modules javafx.controls,javafx.fxml,javafx.graphics,javafx.base ^
-     -jar app\target\file-organizer.jar
+```batch
+# Use the provided compiler script
+.\compiler.bat
 ```
 
----
+**Output:** `dist/File Organizer/File Organizer.exe`
 
-# Build a Standalone Executable (App Image)
+### 4. Build Windows Installer
 
-Requires JavaFX **JMODs**:
-
-```
-set FXJMODS=C:\javafx-jmods-20.0.2
-"%JAVA_HOME%\bin\jpackage.exe" ^
-  --type app-image ^
-  --name "File Organizer" ^
-  --input app\target ^
-  --main-jar file-organizer.jar ^
-  --main-class fr.unkn0wndo3s.app.Main ^
-  --app-version 1.0.0 ^
-  --vendor "Unkn0wndo3s" ^
-  --icon fileorganizer.ico ^
-  --module-path "%FXJMODS%;%JAVA_HOME%\jmods" ^
-  --add-modules javafx.controls,javafx.fxml,javafx.graphics,javafx.base ^
-  --dest dist ^
-  --verbose
-```
-
-This generates:
-
-```
-dist/File Organizer/File Organizer.exe
-```
-
-# Build a Windows Installer
-
-Install **Inno Setup** and compile `installer.iss`:
-
-```
+```batch
+# After running compiler.bat, the installer is automatically created
+# Or manually:
 "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" ".\installer.iss"
 ```
 
-This produces:
-
-```
-FileOrganizer-Setup.exe
-```
-
-# The installer includes an option to **start on Windows startup**.
+**Output:** `FileOrganizer-Setup.exe`
 
 ---
 
-# Typical Development Cycle
+## Testing Commands
 
-For quick tests:
+### 1. Test Hotkey Functionality
 
+```batch
+# Test in development mode
+.\test_hotkey.bat
+
+# Test compiled executable
+.\test_compiled.bat
 ```
-clear
-mvn -q -pl core,ui,windows,app -am clean install
-mvn -q -pl app clean install
+
+### 2. Manual Testing
+
+```batch
+# Development mode
 cd app
 mvn javafx:run
-cd ..
-clear
+
+# Compiled executable
+"dist\File Organizer\File Organizer.exe"
 ```
+
+**Test the hotkey:** Press `Ctrl+Space` to toggle the search window
+
+---
+
+## Development Workflow
+
+### Quick Development Cycle
+
+```batch
+# 1. Compile
+mvn -pl app -am -DskipTests clean package
+
+# 2. Test hotkey
+.\test_hotkey.bat
+
+# 3. Build executable
+.\compiler.bat
+
+# 4. Test executable
+.\test_compiled.bat
+```
+
+### Debug Mode
+
+```batch
+# Run with debug output
+mvn -pl app javafx:run 2>&1 | findstr /i "hotkey"
+```
+
+---
+
+## Troubleshooting
+
+### Hotkey Not Working in Compiled Version
+
+If hotkeys don't work in the compiled executable, ensure:
+
+1. **JavaFX JMODs are properly configured:**
+
+   ```batch
+   set FXJMODS=C:\javafx-jmods-20.0.2
+   ```
+
+2. **All required modules are included:**
+
+   - `java.logging` (required for JNA)
+   - `java.desktop` (required for AWT)
+   - `javafx.*` modules
+
+3. **Check the logs:**
+   ```batch
+   type compiled_output.log
+   ```
+
+### Common Issues
+
+- **"JavaFX runtime components are missing"** → Check JavaFX SDK installation
+- **"NoClassDefFoundError: java/util/logging/Logger"** → Missing `java.logging` module
+- **Hotkey registration fails** → Check Windows permissions and conflicting applications
 
 # Notes
 
