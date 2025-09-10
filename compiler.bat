@@ -3,9 +3,9 @@ cd /d "%~dp0"
 
 call mvn -pl app -am -DskipTests clean package
 
-REM Nettoyer le répertoire de destination s'il existe
+REM Clean the destination directory if it exists
 if exist "dist\File Organizer" (
-    echo Suppression du répertoire de destination existant...
+    echo Removing existing destination directory...
     rmdir /s /q "dist\File Organizer"
 )
 
@@ -17,7 +17,7 @@ call "%JAVA_HOME%\bin\jpackage.exe" ^
   --input app\target ^
   --main-jar file-organizer.jar ^
   --main-class fr.unkn0wndo3s.app.Main ^
-  --app-version 1.0.0 ^
+  --app-version 1.1.0 ^
   --vendor "Unkn0wndo3s" ^
   --icon fileorganizer.ico ^
   --module-path "%FXJMODS%;%JAVA_HOME%\jmods" ^

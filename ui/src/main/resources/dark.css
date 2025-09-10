@@ -17,13 +17,13 @@
     -fx-border-radius: 6;
 }
 
-/* texte tapé (forcé) */
+/* typed text (forced) */
 .search-input,
 .search-input .text {
     -fx-text-fill: white;
 }
 
-/* ListView résultat */
+/* ListView result */
 .list-view {
     -fx-background-radius: 6;
     -fx-background-insets: 0;
