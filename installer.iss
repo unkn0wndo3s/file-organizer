@@ -31,7 +31,7 @@ WizardStyle=modern
 SetupIconFile=fileorganizer.ico
 
 [Languages]
-Name: "english"; MessagesFile: "compiler:Languages\English.isl"
+Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
 ; Checkbox: Launch at startup
