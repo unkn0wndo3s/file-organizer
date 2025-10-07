@@ -65,7 +65,19 @@ public class Main extends Application {
         logWindow = new LogWindow();
         LogBus.addListener(line -> logWindow.append(line));
 
-        hotkey = new WindowsHotkeyService(searchWindow::toggle);
+        hotkey = new WindowsHotkeyService(searchWindow::toggle, new WindowsHotkeyService.HotkeyRegistrationCallback() {
+            @Override
+            public void onHotkeyRegistered(String hotkeyName) {
+                System.out.println("[HOTKEY-REGISTRATION] Hotkey enregistrée: " + hotkeyName);
+                LogBus.log("[hotkey] Hotkey enregistrée: " + hotkeyName);
+            }
+            
+            @Override
+            public void onHotkeyRegistrationFailed(String errorMessage) {
+                System.out.println("[HOTKEY-REGISTRATION] Échec enregistrement: " + errorMessage);
+                LogBus.log("[hotkey:error] Échec enregistrement: " + errorMessage);
+            }
+        });
         hotkey.start();
 
         TrayUtil.installTray(searchWindow, () -> {
