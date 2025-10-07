@@ -133,7 +133,7 @@ mvn javafx:run
 
 ```batch
 # 1. Compile
-mvn -pl app -am -DskipTests clean package
+mvn clean install -DskipTests && mvn -pl app javafx:run
 
 # 2. Test hotkey
 .\test_hotkey.bat
