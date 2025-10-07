@@ -1,8 +1,6 @@
 @echo off
-echo Test des raccourcis clavier...
+echo Test simple de la hotkey
+echo ========================
 echo.
-echo Lancement de l'application...
-echo.
-echo Appuyez sur Ctrl+Space, Alt+F12, Win+G ou F11 pour tester
-echo.
-java -jar app/target/file-organizer.jar
+echo Compilation et execution...
+mvn clean compile exec:java -Dexec.mainClass="fr.unkn0wndo3s.app.App" -Dexec.args="--debug" 2>&1 | findstr /i "hotkey\|focus\|edition\|ignor"
