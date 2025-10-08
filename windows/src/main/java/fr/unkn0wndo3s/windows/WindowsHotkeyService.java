@@ -25,7 +25,7 @@ public class WindowsHotkeyService {
     private volatile boolean running = false;
     private WindowsFocusMonitor focusMonitor;
     private volatile boolean hotkeyRegistered = false;
-    private volatile boolean hotkeyActive = true; // État secondaire : true = active, false = ignorée
+    private volatile boolean hotkeyActive = true; // Secondary state: true = active, false = ignored
 
     private static final int HOTKEY_ID = 0xBEEF;
     private static final int MOD_CONTROL = 0x0002;
@@ -43,13 +43,13 @@ public class WindowsHotkeyService {
 
     public void start() {
         if (running) {
-            LogBus.log("[hotkey] Service déjà démarré");
+            LogBus.log("[hotkey] Service already started");
             return;
         }
         running = true;
-        LogBus.log("[hotkey] Démarrage du service de raccourcis...");
+        LogBus.log("[hotkey] Starting hotkey service...");
         
-        // Démarrer le monitoring de focus
+        // Start focus monitoring
         focusMonitor = new WindowsFocusMonitor((title, className, shouldDisableHotkey) -> {
             if (shouldDisableHotkey) {
                 deactivateHotkey();
@@ -61,61 +61,61 @@ public class WindowsHotkeyService {
 
         loopThread = new Thread(() -> {
             try {
-                System.out.println("[HOTKEY-DEBUG] Thread de raccourcis démarré");
-                LogBus.log("[hotkey] Thread de raccourcis démarré");
+                System.out.println("[HOTKEY-DEBUG] Hotkey thread started");
+                LogBus.log("[hotkey] Hotkey thread started");
                 
-                // Enregistrer la hotkey initiale
+                // Register initial hotkey
                 registerHotkey();
 
-                System.out.println("[HOTKEY-DEBUG] Démarrage de la boucle de messages...");
-                LogBus.log("[hotkey] Démarrage de la boucle de messages...");
+                System.out.println("[HOTKEY-DEBUG] Starting message loop...");
+                LogBus.log("[hotkey] Starting message loop...");
                 MSG msg = new MSG();
                 while (running) {
                     int result = User32.INSTANCE.GetMessage(msg, null, 0, 0);
                     if (result == 0) {
-                        System.out.println("[HOTKEY-DEBUG] WM_QUIT reçu, arrêt de la boucle");
-                        LogBus.log("[hotkey] WM_QUIT reçu, arrêt de la boucle");
+                        System.out.println("[HOTKEY-DEBUG] WM_QUIT received, stopping loop");
+                        LogBus.log("[hotkey] WM_QUIT received, stopping loop");
                         break;      // WM_QUIT
                     }
                     if (result == -1) {
-                        System.out.println("[HOTKEY-DEBUG] GetMessage a échoué");
-                        LogBus.log("[hotkey:error] GetMessage a échoué");
+                        System.out.println("[HOTKEY-DEBUG] GetMessage failed");
+                        LogBus.log("[hotkey:error] GetMessage failed");
                         break;     // erreur
                     }
                 
                     if (msg.message == WinUser.WM_HOTKEY && msg.wParam.intValue() == HOTKEY_ID) {
                         if (hotkeyRegistered) {
-                            System.out.println("[HOTKEY-DEBUG] Raccourci détecté!");
-                            LogBus.log("[hotkey] Raccourci détecté!");
+                        System.out.println("[HOTKEY-DEBUG] Hotkey detected!");
+                        LogBus.log("[hotkey] Hotkey detected!");
                             if (callback != null) {
-                                System.out.println("[HOTKEY-DEBUG] Exécution du callback...");
-                                LogBus.log("[hotkey] Exécution du callback...");
+                                System.out.println("[HOTKEY-DEBUG] Executing callback...");
+                                LogBus.log("[hotkey] Executing callback...");
                                 callback.onToggle();
                             }
                         } else {
-                            System.out.println("[HOTKEY-DEBUG] Raccourci ignoré (hotkey non enregistrée)");
-                            LogBus.log("[hotkey] Raccourci ignoré (hotkey non enregistrée)");
+                            System.out.println("[HOTKEY-DEBUG] Hotkey ignored (hotkey not registered)");
+                            LogBus.log("[hotkey] Hotkey ignored (hotkey not registered)");
                         }
                     } else {
                         User32.INSTANCE.TranslateMessage(msg);
                         User32.INSTANCE.DispatchMessage(msg);
                     }
                 }
-                System.out.println("[HOTKEY-DEBUG] Boucle de messages terminée");
-                LogBus.log("[hotkey] Boucle de messages terminée");
+                System.out.println("[HOTKEY-DEBUG] Message loop finished");
+                LogBus.log("[hotkey] Message loop finished");
             } catch (Exception e) {
-                System.out.println("[HOTKEY-DEBUG] Exception dans le thread: " + e.getMessage());
+                System.out.println("[HOTKEY-DEBUG] Exception in thread: " + e.getMessage());
                 LogBus.log("[hotkey:error] " + e.getMessage());
                 e.printStackTrace();
             } finally {
                 try {
-                    System.out.println("[HOTKEY-DEBUG] Désenregistrement du raccourci...");
+                    System.out.println("[HOTKEY-DEBUG] Unregistering hotkey...");
                     User32.INSTANCE.UnregisterHotKey(null, HOTKEY_ID);
-                    System.out.println("[HOTKEY-DEBUG] Raccourci désenregistré");
-                    LogBus.log("[hotkey] Raccourci désenregistré");
+                    System.out.println("[HOTKEY-DEBUG] Hotkey unregistered");
+                    LogBus.log("[hotkey] Hotkey unregistered");
                 } catch (Exception e) {
-                    System.out.println("[HOTKEY-DEBUG] Erreur lors du désenregistrement: " + e.getMessage());
-                    LogBus.log("[hotkey:error] Erreur lors du désenregistrement: " + e.getMessage());
+                    System.out.println("[HOTKEY-DEBUG] Error during unregistration: " + e.getMessage());
+                    LogBus.log("[hotkey:error] Error during unregistration: " + e.getMessage());
                 }
             }
         }, "HotkeyLoop");
@@ -124,25 +124,25 @@ public class WindowsHotkeyService {
     }
 
     public void stop() {
-        LogBus.log("[hotkey] Arrêt du service de raccourcis...");
+        LogBus.log("[hotkey] Stopping hotkey service...");
         running = false;
         
-        // Arrêter le monitoring de focus
+        // Stop focus monitoring
         if (focusMonitor != null) {
             focusMonitor.stop();
         }
         
         try { 
             User32.INSTANCE.PostQuitMessage(0); 
-            LogBus.log("[hotkey] PostQuitMessage envoyé");
+            LogBus.log("[hotkey] PostQuitMessage sent");
         } catch (Throwable e) {
-            LogBus.log("[hotkey:error] Erreur lors de PostQuitMessage: " + e.getMessage());
+            LogBus.log("[hotkey:error] Error during PostQuitMessage: " + e.getMessage());
         }
     }
 
     private void registerHotkey() {
-        System.out.println("[HOTKEY-DEBUG] Enregistrement de la hotkey...");
-        LogBus.log("[hotkey] Enregistrement de la hotkey...");
+        System.out.println("[HOTKEY-DEBUG] Registering hotkey...");
+        LogBus.log("[hotkey] Registering hotkey...");
         
         try {
             boolean ok = User32.INSTANCE.RegisterHotKey((HWND) null, HOTKEY_ID, MOD_CONTROL, VK_SPACE);
@@ -150,31 +150,31 @@ public class WindowsHotkeyService {
             if (ok) {
                 hotkeyRegistered = true;
                 hotkeyActive = true;
-                System.out.println("[HOTKEY-DEBUG] Hotkey enregistrée avec succès");
-                LogBus.log("[hotkey] Hotkey enregistrée avec succès");
+                System.out.println("[HOTKEY-DEBUG] Hotkey registered successfully");
+                LogBus.log("[hotkey] Hotkey registered successfully");
                 if (registrationCallback != null) {
                     registrationCallback.onHotkeyRegistered("Ctrl+Space");
                 }
             } else {
                 int errorCode = Kernel32.INSTANCE.GetLastError();
-                System.out.println("[HOTKEY-DEBUG] Erreur enregistrement, code: " + errorCode);
+                System.out.println("[HOTKEY-DEBUG] Registration error, code: " + errorCode);
                 String errorMsg = getErrorMessage(errorCode);
-                System.out.println("[HOTKEY-DEBUG] Message d'erreur: " + errorMsg);
+                System.out.println("[HOTKEY-DEBUG] Error message: " + errorMsg);
                 
-                // Si l'erreur est "already registered", on considère que c'est OK
+                // If error is "already registered", consider it OK
                 if (errorCode == 1409) { // ERROR_HOTKEY_ALREADY_REGISTERED
-                    hotkeyRegistered = true; // On considère qu'elle est enregistrée
+                    hotkeyRegistered = true; // Consider it registered
                     hotkeyActive = true;
-                    System.out.println("[HOTKEY-DEBUG] Hotkey déjà enregistrée par ailleurs, considéré comme OK");
-                    LogBus.log("[hotkey] Hotkey déjà enregistrée par ailleurs, considéré comme OK");
+                    System.out.println("[HOTKEY-DEBUG] Hotkey already registered elsewhere, considered OK");
+                    LogBus.log("[hotkey] Hotkey already registered elsewhere, considered OK");
                     if (registrationCallback != null) {
                         registrationCallback.onHotkeyRegistered("Ctrl+Space");
                     }
                 } else {
                     hotkeyRegistered = false;
                     hotkeyActive = false;
-                    LogBus.log("[hotkey:error] Impossible d'enregistrer la hotkey (code: " + errorCode + ")");
-                    LogBus.log("[hotkey:error] Message d'erreur: " + errorMsg);
+                    LogBus.log("[hotkey:error] Unable to register hotkey (code: " + errorCode + ")");
+                    LogBus.log("[hotkey:error] Error message: " + errorMsg);
                     
                     if (registrationCallback != null) {
                         registrationCallback.onHotkeyRegistrationFailed("Ctrl+Space: " + errorMsg);
@@ -184,8 +184,8 @@ public class WindowsHotkeyService {
         } catch (Exception e) {
             hotkeyRegistered = false;
             hotkeyActive = false;
-            System.out.println("[HOTKEY-DEBUG] Exception lors de l'enregistrement: " + e.getMessage());
-            LogBus.log("[hotkey:error] Exception lors de l'enregistrement: " + e.getMessage());
+            System.out.println("[HOTKEY-DEBUG] Exception during registration: " + e.getMessage());
+            LogBus.log("[hotkey:error] Exception during registration: " + e.getMessage());
             
             if (registrationCallback != null) {
                 registrationCallback.onHotkeyRegistrationFailed("Ctrl+Space: " + e.getMessage());
@@ -195,51 +195,51 @@ public class WindowsHotkeyService {
     
     private void activateHotkey() {
         if (!hotkeyRegistered) {
-            System.out.println("[HOTKEY-DEBUG] Hotkey non enregistrée, enregistrement...");
+            System.out.println("[HOTKEY-DEBUG] Hotkey not registered, registering...");
             registerHotkey();
             return;
         }
         
         hotkeyActive = true;
-        System.out.println("[HOTKEY-DEBUG] Hotkey activée");
-        LogBus.log("[hotkey] Hotkey activée");
+        System.out.println("[HOTKEY-DEBUG] Hotkey activated");
+        LogBus.log("[hotkey] Hotkey activated");
     }
     
     private void deactivateHotkey() {
         if (!hotkeyRegistered) {
-            System.out.println("[HOTKEY-DEBUG] Hotkey non enregistrée, ignoré");
-            LogBus.log("[hotkey] Hotkey non enregistrée, ignoré");
+            System.out.println("[HOTKEY-DEBUG] Hotkey not registered, ignored");
+            LogBus.log("[hotkey] Hotkey not registered, ignored");
             return;
         }
         
-        // Désenregistrer vraiment la hotkey de Windows pour libérer Ctrl+Space
-        System.out.println("[HOTKEY-DEBUG] Désenregistrement de la hotkey pour libérer Ctrl+Space...");
-        LogBus.log("[hotkey] Désenregistrement de la hotkey pour libérer Ctrl+Space...");
+        // Really unregister the hotkey from Windows to free Ctrl+Space
+        System.out.println("[HOTKEY-DEBUG] Unregistering hotkey to free Ctrl+Space...");
+        LogBus.log("[hotkey] Unregistering hotkey to free Ctrl+Space...");
         
         try {
             boolean ok = User32.INSTANCE.UnregisterHotKey(null, HOTKEY_ID);
             if (ok) {
                 hotkeyRegistered = false;
                 hotkeyActive = false;
-                System.out.println("[HOTKEY-DEBUG] Hotkey désenregistrée avec succès - Ctrl+Space libéré");
-                LogBus.log("[hotkey] Hotkey désenregistrée avec succès - Ctrl+Space libéré");
+                System.out.println("[HOTKEY-DEBUG] Hotkey unregistered successfully - Ctrl+Space freed");
+                LogBus.log("[hotkey] Hotkey unregistered successfully - Ctrl+Space freed");
             } else {
                 int errorCode = Kernel32.INSTANCE.GetLastError();
                 if (errorCode == 1419) { // ERROR_HOTKEY_NOT_REGISTERED
                     hotkeyRegistered = false;
                     hotkeyActive = false;
-                    System.out.println("[HOTKEY-DEBUG] Hotkey n'était pas enregistrée - Ctrl+Space déjà libéré");
-                    LogBus.log("[hotkey] Hotkey n'était pas enregistrée - Ctrl+Space déjà libéré");
+                    System.out.println("[HOTKEY-DEBUG] Hotkey was not registered - Ctrl+Space already freed");
+                    LogBus.log("[hotkey] Hotkey was not registered - Ctrl+Space already freed");
                 } else {
                     hotkeyActive = false;
-                    System.out.println("[HOTKEY-DEBUG] Erreur désenregistrement (code: " + errorCode + "), état forcé à inactif");
-                    LogBus.log("[hotkey:warning] Erreur désenregistrement (code: " + errorCode + "), état forcé à inactif");
+                    System.out.println("[HOTKEY-DEBUG] Unregistration error (code: " + errorCode + "), state forced to inactive");
+                    LogBus.log("[hotkey:warning] Unregistration error (code: " + errorCode + "), state forced to inactive");
                 }
             }
         } catch (Exception e) {
             hotkeyActive = false;
-            System.out.println("[HOTKEY-DEBUG] Exception lors du désenregistrement: " + e.getMessage());
-            LogBus.log("[hotkey:warning] Exception lors du désenregistrement: " + e.getMessage());
+            System.out.println("[HOTKEY-DEBUG] Exception during unregistration: " + e.getMessage());
+            LogBus.log("[hotkey:warning] Exception during unregistration: " + e.getMessage());
         }
     }
     

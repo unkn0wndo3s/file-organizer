@@ -17,64 +17,64 @@ public class WindowsFocusMonitor {
     private volatile boolean running = false;
     private HWND lastFocusedWindow = null;
     
-    // Classes de fenêtre communes pour les éditeurs de texte
+    // Common window classes for text editors
     private static final String[] TEXT_EDITOR_CLASSES = {
         "Notepad",           // Notepad
         "Vim",               // Vim
         "VimGtk",            // Vim GTK
         "Code",              // VS Code
         "Chrome_WidgetWin_1", // VS Code, Cursor (Electron)
-        "Chrome_WidgetWin_0", // VS Code, Cursor (Electron variante)
-        "SunAwtFrame",       // Applications Java (éditeurs)
+        "Chrome_WidgetWin_0", // VS Code, Cursor (Electron variant)
+        "SunAwtFrame",       // Java applications (editors)
         "SWT_Window0",       // Eclipse, IntelliJ
-        "ConsoleWindowClass", // Console Windows
-        "Edit",              // Contrôles d'édition simples
-        "RichEdit20W",       // Contrôles d'édition riches
-        "RICHEDIT50W",       // Contrôles d'édition riches modernes
-        "Scintilla",         // Scintilla (utilisé par Notepad++, etc.)
-        "wxWindowClassNR",   // Applications wxWidgets
-        "TkTopLevel",        // Applications Tkinter (Python)
-        "Qt5QWindowIcon",    // Applications Qt5
-        "Qt6QWindowIcon",    // Applications Qt6
-        "CefBrowserWindow",  // Applications basées sur CEF (éditeurs)
-        "ElectronMainWindow", // Applications Electron
-        "Chrome_RenderWidgetHostHWND", // Applications Electron/CEF
-        "Chrome_WidgetWin_2" // Applications Electron (variante)
+        "ConsoleWindowClass", // Windows Console
+        "Edit",              // Simple edit controls
+        "RichEdit20W",       // Rich edit controls
+        "RICHEDIT50W",       // Modern rich edit controls
+        "Scintilla",         // Scintilla (used by Notepad++, etc.)
+        "wxWindowClassNR",   // wxWidgets applications
+        "TkTopLevel",        // Tkinter applications (Python)
+        "Qt5QWindowIcon",    // Qt5 applications
+        "Qt6QWindowIcon",    // Qt6 applications
+        "CefBrowserWindow",  // CEF-based applications (editors)
+        "ElectronMainWindow", // Electron applications
+        "Chrome_RenderWidgetHostHWND", // Electron/CEF applications
+        "Chrome_WidgetWin_2" // Electron applications (variant)
     };
     
-    // Classes de fenêtre communes pour les jeux
+    // Common window classes for games
     private static final String[] GAME_CLASSES = {
-        "UnityWndClass",     // Jeux Unity
-        "UnrealWindow",      // Jeux Unreal Engine
-        "Valve001",          // Jeux Source (Half-Life, CS, etc.)
-        "TankWindowClass",   // Jeux utilisant Tank Engine
-        "CryEngine",         // Jeux CryEngine
-        "Frostbite",         // Jeux Frostbite
-        "D3DWindow",         // Jeux DirectX
-        "OpenGLWindow",      // Jeux OpenGL
-        "SDL_app",           // Jeux SDL
-        "AllegroWindow",     // Jeux Allegro
-        "SFML_Window",       // Jeux SFML
-        "GLFW3",             // Jeux GLFW
-        "SDL_Window",        // Jeux SDL2
-        "GameWindow",        // Jeux génériques
-        "MainWindow",        // Jeux avec fenêtre principale
-        "RenderWindow",      // Fenêtres de rendu
-        "DirectXWindow",     // Fenêtres DirectX
-        "VulkanWindow",      // Fenêtres Vulkan
-        "MetalWindow",       // Fenêtres Metal (macOS)
-        "GameEngine"         // Moteurs de jeu
+        "UnityWndClass",     // Unity games
+        "UnrealWindow",      // Unreal Engine games
+        "Valve001",          // Source games (Half-Life, CS, etc.)
+        "TankWindowClass",   // Games using Tank Engine
+        "CryEngine",         // CryEngine games
+        "Frostbite",         // Frostbite games
+        "D3DWindow",         // DirectX games
+        "OpenGLWindow",      // OpenGL games
+        "SDL_app",           // SDL games
+        "AllegroWindow",     // Allegro games
+        "SFML_Window",       // SFML games
+        "GLFW3",             // GLFW games
+        "SDL_Window",        // SDL2 games
+        "GameWindow",        // Generic games
+        "MainWindow",        // Games with main window
+        "RenderWindow",      // Render windows
+        "DirectXWindow",     // DirectX windows
+        "VulkanWindow",      // Vulkan windows
+        "MetalWindow",       // Metal windows (macOS)
+        "GameEngine"         // Game engines
     };
     
-    // Classes de fenêtre pour les navigateurs (à NE PAS désactiver)
+    // Window classes for browsers (should NOT disable hotkey)
     private static final String[] BROWSER_CLASSES = {
         "Chrome_WidgetWin_1", // Chrome
-        "Chrome_WidgetWin_0", // Chrome (variante)
+        "Chrome_WidgetWin_0", // Chrome (variant)
         "MozillaWindowClass", // Firefox
-        "MozillaUIWindow",    // Firefox (variante)
+        "MozillaUIWindow",    // Firefox (variant)
         "IEFrame",           // Internet Explorer
         "EdgeUiInputTopWndClass", // Edge
-        "ApplicationFrameWindow", // Edge (variante)
+        "ApplicationFrameWindow", // Edge (variant)
         "Safari",            // Safari
         "OperaWindow",       // Opera
         "Vivaldi",           // Vivaldi
@@ -85,7 +85,7 @@ public class WindowsFocusMonitor {
         "SeaMonkey"          // SeaMonkey
     };
     
-    // Mots-clés dans les titres de fenêtre pour détecter les éditeurs
+    // Keywords in window titles to detect editors
     private static final String[] TEXT_EDITOR_KEYWORDS = {
         "notepad", "notepad++", "vim", "emacs", "sublime", "atom", "code", "cursor",
         "visual studio", "intellij", "eclipse", "netbeans", "textpad", "editplus",
@@ -100,7 +100,7 @@ public class WindowsFocusMonitor {
         "fade in", "highland", "writerduet", "trelby", "kit scenarist", "kitscenarist"
     };
     
-    // Mots-clés dans les titres de fenêtre pour détecter les jeux
+    // Keywords in window titles to detect games
     private static final String[] GAME_KEYWORDS = {
         "steam", "epic games", "origin", "uplay", "battle.net", "gog", "itch.io",
         "minecraft", "fortnite", "league of legends", "dota", "counter-strike", "cs:go",
@@ -132,7 +132,7 @@ public class WindowsFocusMonitor {
         "game", "gaming", "play", "playing", "launcher", "launcher.exe"
     };
     
-    // Mots-clés dans les titres de fenêtre pour détecter les navigateurs (à NE PAS désactiver)
+    // Keywords in window titles to detect browsers (should NOT disable hotkey)
     private static final String[] BROWSER_KEYWORDS = {
         "chrome", "firefox", "edge", "safari", "opera", "vivaldi", "brave",
         "tor browser", "waterfox", "pale moon", "seamonkey", "internet explorer",
@@ -146,17 +146,17 @@ public class WindowsFocusMonitor {
     
     public void start() {
         if (running) {
-            LogBus.log("[focus] Monitor déjà démarré");
+            LogBus.log("[focus] Monitor already started");
             return;
         }
         
         running = true;
-        LogBus.log("[focus] Démarrage du monitoring de focus...");
+        LogBus.log("[focus] Starting focus monitoring...");
         
         monitorThread = new Thread(() -> {
             try {
-                System.out.println("[FOCUS-DEBUG] Thread de monitoring démarré");
-                LogBus.log("[focus] Thread de monitoring démarré");
+                System.out.println("[FOCUS-DEBUG] Monitoring thread started");
+                LogBus.log("[focus] Monitoring thread started");
                 
                 while (running) {
                     try {
@@ -168,19 +168,19 @@ public class WindowsFocusMonitor {
                             String windowTitle = getWindowTitle(currentWindow);
                             String className = getWindowClassName(currentWindow);
                             
-                            System.out.println("[FOCUS-DEBUG] Changement de focus vers: " + windowTitle);
-                            System.out.println("[FOCUS-DEBUG] Classe de fenêtre: " + className);
-                            LogBus.log("[focus] Changement de focus vers: " + windowTitle);
-                            LogBus.log("[focus] Classe de fenêtre: " + className);
+                            System.out.println("[FOCUS-DEBUG] Focus change to: " + windowTitle);
+                            System.out.println("[FOCUS-DEBUG] Window class: " + className);
+                            LogBus.log("[focus] Focus change to: " + windowTitle);
+                            LogBus.log("[focus] Window class: " + className);
                             
                             boolean shouldDisable = shouldDisableHotkey(windowTitle, className);
                             
                             if (shouldDisable) {
-                                System.out.println("[FOCUS-DEBUG] Focus sur une application nécessitant la désactivation de la hotkey");
-                                LogBus.log("[focus] Focus sur une application nécessitant la désactivation de la hotkey");
+                                System.out.println("[FOCUS-DEBUG] Focus on application requiring hotkey deactivation");
+                                LogBus.log("[focus] Focus on application requiring hotkey deactivation");
                             } else {
-                                System.out.println("[FOCUS-DEBUG] Focus sur une application normale");
-                                LogBus.log("[focus] Focus sur une application normale");
+                                System.out.println("[FOCUS-DEBUG] Focus on normal application");
+                                LogBus.log("[focus] Focus on normal application");
                             }
                             
                             if (callback != null) {
@@ -188,23 +188,23 @@ public class WindowsFocusMonitor {
                             }
                         }
                         
-                        Thread.sleep(100); // Vérifier toutes les 100ms
+                        Thread.sleep(100); // Check every 100ms
                         
                     } catch (InterruptedException e) {
                         Thread.currentThread().interrupt();
                         break;
                     } catch (Exception e) {
-                        System.out.println("[FOCUS-DEBUG] Erreur dans le monitoring: " + e.getMessage());
+                        System.out.println("[FOCUS-DEBUG] Error in monitoring: " + e.getMessage());
                         LogBus.log("[focus:error] " + e.getMessage());
-                        Thread.sleep(1000); // Attendre 1s en cas d'erreur
+                        Thread.sleep(1000); // Wait 1s in case of error
                     }
                 }
                 
-                System.out.println("[FOCUS-DEBUG] Thread de monitoring terminé");
-                LogBus.log("[focus] Thread de monitoring terminé");
+                System.out.println("[FOCUS-DEBUG] Monitoring thread finished");
+                LogBus.log("[focus] Monitoring thread finished");
                 
             } catch (Exception e) {
-                System.out.println("[FOCUS-DEBUG] Exception dans le thread: " + e.getMessage());
+                System.out.println("[FOCUS-DEBUG] Exception in thread: " + e.getMessage());
                 LogBus.log("[focus:error] " + e.getMessage());
                 e.printStackTrace();
             }
@@ -215,7 +215,7 @@ public class WindowsFocusMonitor {
     }
     
     public void stop() {
-        LogBus.log("[focus] Arrêt du monitoring de focus...");
+        LogBus.log("[focus] Stopping focus monitoring...");
         running = false;
         if (monitorThread != null) {
             monitorThread.interrupt();
@@ -254,24 +254,24 @@ public class WindowsFocusMonitor {
         String titleLower = title.toLowerCase();
         String classLower = className.toLowerCase();
         
-        // D'abord vérifier si c'est un éditeur spécifique par titre (priorité haute)
+        // First check if it's a specific editor by title (high priority)
         for (String keyword : TEXT_EDITOR_KEYWORDS) {
             if (titleLower.contains(keyword)) {
                 return true;
             }
         }
         
-        // Vérifier si c'est un jeu par titre (priorité haute)
+        // Check if it's a game by title (high priority)
         for (String keyword : GAME_KEYWORDS) {
             if (titleLower.contains(keyword)) {
                 return true;
             }
         }
         
-        // Vérifier les classes de fenêtre pour les éditeurs
+        // Check window classes for editors
         for (String editorClass : TEXT_EDITOR_CLASSES) {
             if (classLower.contains(editorClass.toLowerCase())) {
-                // Mais exclure les navigateurs même s'ils ont la même classe
+                // But exclude browsers even if they have the same class
                 boolean isBrowser = false;
                 for (String browserKeyword : BROWSER_KEYWORDS) {
                     if (titleLower.contains(browserKeyword)) {
@@ -285,23 +285,23 @@ public class WindowsFocusMonitor {
             }
         }
         
-        // Vérifier les classes de fenêtre pour les jeux
+        // Check window classes for games
         for (String gameClass : GAME_CLASSES) {
             if (classLower.contains(gameClass.toLowerCase())) {
                 return true;
             }
         }
         
-        // Vérifier si c'est un navigateur (à NE PAS désactiver)
+        // Check if it's a browser (should NOT disable)
         for (String browserClass : BROWSER_CLASSES) {
             if (classLower.contains(browserClass.toLowerCase())) {
-                return false; // Ne pas désactiver pour les navigateurs
+                return false; // Don't disable for browsers
             }
         }
         
         for (String browserKeyword : BROWSER_KEYWORDS) {
             if (titleLower.contains(browserKeyword)) {
-                return false; // Ne pas désactiver pour les navigateurs
+                return false; // Don't disable for browsers
             }
         }
         
