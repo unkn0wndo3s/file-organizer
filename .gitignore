@@ -25,3 +25,5 @@ RELEASE_NOTES.md
 # Added by cargo
 
 /target
+# Log files
+*.log
