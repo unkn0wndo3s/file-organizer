@@ -1639,6 +1639,7 @@ dependencies = [
 name = "file-organizer"
 version = "2.0.0"
 dependencies = [
+ "anyhow",
  "gpui",
  "gpui-component",
 ]
