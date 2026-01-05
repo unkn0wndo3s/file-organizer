@@ -1,0 +1,10 @@
+[target.x86_64-pc-windows-gnu]
+rustflags = ["-C", "link-arg=-fuse-ld=lld"]
+
+[build]
+incremental = true
+
+[profile.dev]
+opt-level = 0
+debug = 0
+split-debuginfo = "unpacked"
