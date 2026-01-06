@@ -28,11 +28,10 @@ impl Render for TitleBar {
             .h_8()
             .w_full()
             .flex()
-            .bg(rgb(0x2d2d2d)) // Slight background to distinguish title bar
             .justify_between() // Space between drag area and buttons
             .items_center()
             .child(
-                div().px_4().text_sm().child("My App") // Optional title text
+                div().px_4().text_sm().child("File Organizer") // title text
             )
             .child(
                 div()
