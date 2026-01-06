@@ -86,9 +86,9 @@ impl Render for List {
                     })
                     .map(|item| {
                         let icon = if item.item_type == "Folder" {
-                            Icon::new(IconName::Minimize)
+                            Icon::new(IconName::Folder)
                         } else {
-                            Icon::new(IconName::Close)
+                            Icon::new(IconName::File)
                         };
 
                         div()

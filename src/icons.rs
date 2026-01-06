@@ -46,6 +46,14 @@ impl AssetSource for LocalAssets {
 pub enum IconName {
     Close,
     Minimize,
+    File,
+    Folder,
+    Image,
+    Video,
+    Music,
+    Archive,
+    Search,
+    Settings,
 }
 
 impl IconNamed for IconName {
@@ -53,6 +61,14 @@ impl IconNamed for IconName {
         match self {
             IconName::Close => "icons/close.svg".into(),
             IconName::Minimize => "icons/minus.svg".into(),
+            IconName::File => "icons/file.svg".into(),
+            IconName::Folder => "icons/folder.svg".into(),
+            IconName::Image => "icons/file-image.svg".into(),
+            IconName::Video => "icons/file-video.svg".into(),
+            IconName::Music => "icons/file-music.svg".into(),
+            IconName::Archive => "icons/file-archive.svg".into(),
+            IconName::Search => "icons/search.svg".into(),
+            IconName::Settings => "icons/settings.svg".into(),
         }
     }
 }
