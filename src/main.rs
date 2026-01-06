@@ -1,63 +1,71 @@
 mod icons;
 mod title_bar;
+mod list;
 use gpui::*;
-use gpui_component::{button::*, input::*, *};
+use gpui::Styled;
+use gpui_component::{input::*, *};
+// Remove the broken import
 use title_bar::TitleBar;
 use icons::LocalAssets;
+use list::List;
 
 pub struct Main {
     title_bar: Entity<TitleBar>,
-    // State handle for the text input
+    list: Entity<List>,
     input_state: Entity<InputState>,
 }
 
 impl Main {
-    pub fn new(title_bar: Entity<TitleBar>,window: &mut Window, cx: &mut Context<Self>) -> Self {
+    pub fn new(title_bar: Entity<TitleBar>, list: Entity<List>, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let input_state = cx.new(|cx| {
             let mut state = InputState::new(window, cx);
-            state.set_placeholder("Enter your name", window, cx);
+            state.set_placeholder("Search for file or folder", window, cx);
             state
         });
+
+        let list_handle = list.clone();
+        
+        cx.subscribe(&input_state, move |_this, input_handle, _event: &gpui_component::input::InputEvent, cx| {
+            let query = input_handle.read(cx).value().to_string();
+            list_handle.update(cx, |list_entity, cx| {
+                list_entity.set_search(query, cx);
+            });
+        }).detach();
 
         Self { 
             title_bar,
             input_state,
+            list,
         }
     }
-
 }
 
 impl Render for Main {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        // Get the handle for this view to update it from closures
         let _view = cx.entity().clone();
 
         div()
             .size_full()
             .v_flex()
             .bg(rgb(0x1e1e1e))
+            .child(self.title_bar.clone())
             .child(
-                //Title Bar
-                self.title_bar.clone()
-            )
-            .child(
-                // Main Content Area
                 div()
                     .flex_grow()
                     .v_flex()
-                    .items_center()
-                    .justify_start()
                     .p_4()
+                    .gap_4()
                     .child(Input::new(&self.input_state).w_full())
                     .child(
                         div()
-                            .mt_4()
-                            .child(
-                                Button::new("ok")
-                                    .primary()
-                                    .label("Let's Go!")
-                                    .on_click(|_, _, _| println!("Clicked!")),
-                            )
+                            .w_full()
+                            .h_0()
+                            .flex_grow()
+                            // Assign ID first (creates the state required for scrolling)
+                            .id("list-scroll-view")
+                            // Enable scrolling (valid only on stateful elements)
+                            .overflow_y_scroll() 
+                            .child(self.list.clone())
                     )
             )
     }
@@ -71,7 +79,6 @@ fn main() {
         gpui_component::init(cx);
 
         cx.spawn(async move |cx| {
-            // Determine screen size for relative window scaling
             let screen_bounds = cx.update(|cx| {
                 cx.displays()
                     .first()
@@ -86,15 +93,15 @@ fn main() {
 
             let options = WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(Bounds::new(point(x, y), size(width, height)))),
-                is_resizable: false, // Prevent users from changing window size
-                // This removes the native OS title bar and buttons
+                is_resizable: false, 
                 titlebar: None,
                 ..Default::default()
             };
 
             cx.open_window(options, |window, cx| {
                 let title_bar = cx.new(|_cx| TitleBar::new());
-                let view = cx.new(|cx| Main::new(title_bar, window, cx));
+                let list = cx.new(|_cx| List::new());
+                let view = cx.new(|cx| Main::new(title_bar, list, window, cx));
                 cx.new(|cx| Root::new(view, window, cx))
             })?;
 
