@@ -2,10 +2,10 @@ use gpui::*;
 use gpui_component::{Icon, StyledExt};
 use crate::icons::*;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use notify::{Event, EventKind, event::{ModifyKind, RenameMode}};
 
-// Changed fields to String to own the data (avoids memory leaks from Box::leak)
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct FileItem {
     name: String,
     item_type: String,
@@ -14,49 +14,30 @@ struct FileItem {
 
 pub struct List {
     searched_string: String,
-    // Store the items in the struct so we don't read from disk every frame
-    items: Vec<FileItem>, 
+    items: Vec<FileItem>,
 }
 
 impl List {
-    pub fn new() -> Self {
-        // Load files immediately upon creation
+    pub fn new(_cx: &mut Context<Self>) -> Self {
         let items = Self::load_files();
-        
         Self { 
             searched_string: String::new(),
             items,
         }
     }
 
-    // Helper function to load files safely
     fn load_files() -> Vec<FileItem> {
         let mut items = vec![];
         let main_folders = vec!["Documents", "Pictures", "Videos", "Music", "Downloads"];
-
-        // Get the user profile dynamically (Works on any Windows user)
         let base_path = std::env::var("USERPROFILE").unwrap_or_else(|_| "C:/".to_string());
 
         for folder in main_folders {
             let full_path = format!("{}\\{}", base_path, folder);
-
-            // Use `if let Ok` instead of `unwrap`. If a folder is missing, we skip it safely.
             if let Ok(entries) = fs::read_dir(full_path) {
                 for entry in entries {
                     if let Ok(entry) = entry {
                         let path = entry.path();
-                        // Safe conversion of filename
-                        let name = path.file_name()
-                            .map(|n| n.to_string_lossy().into_owned())
-                            .unwrap_or_else(|| "Unknown".to_string());
-                        
-                        let item_type = if path.is_dir() { "Folder" } else { "File" };
-
-                        items.push(FileItem {
-                            name,
-                            item_type: item_type.to_string(),
-                            path: path.to_string_lossy().into_owned(),
-                        });
+                        List::create_item_from_path(path).map(|item| items.push(item));
                     }
                 }
             }
@@ -64,9 +45,103 @@ impl List {
         items
     }
 
+    // Helper to standardise item creation
+    fn create_item_from_path(path: PathBuf) -> Option<FileItem> {
+        let name = path.file_name()?.to_string_lossy().into_owned();
+        let item_type = if path.is_dir() { "Folder" } else { "File" };
+        let path_str = path.to_string_lossy().into_owned();
+
+        Some(FileItem {
+            name,
+            item_type: item_type.to_string(),
+            path: path_str,
+        })
+    }
+
     pub fn set_search(&mut self, query: String, cx: &mut Context<Self>) {
         self.searched_string = query;
         cx.notify(); 
+    }
+
+    pub fn handle_fs_event(&mut self, event: Event, cx: &mut Context<Self>) {
+        // notify can sometimes send events for the parent folder itself (e.g. "Documents" modified)
+        // We only care about files/folders INSIDE the watched folders.
+        
+        match event.kind {
+            EventKind::Create(_) => {
+                for path in event.paths {
+                    if path.exists() {
+                        self.add_file(path);
+                    }
+                }
+            }
+            EventKind::Remove(_) => {
+                for path in event.paths {
+                    self.remove_file(&path);
+                }
+            }
+            EventKind::Modify(modify_kind) => {
+                 match modify_kind {
+                     ModifyKind::Name(mode) => {
+                         match mode {
+                             RenameMode::From => {
+                                 for path in &event.paths {
+                                     self.remove_file(path);
+                                 }
+                             }
+                             RenameMode::To => {
+                                 for path in event.paths {
+                                     if path.exists() {
+                                         self.add_file(path);
+                                     }
+                                 }
+                             }
+                             _ => {
+                                 // Simple rename: usually [from, to]
+                                 if event.paths.len() == 2 {
+                                     let from = &event.paths[0];
+                                     let to = &event.paths[1];
+                                     self.rename_file(from, to);
+                                 }
+                             }
+                         }
+                     }
+                     // Trigger update for content modification if needed
+                     // ModifyKind::Data(_) => { ... } 
+                     _ => {}
+                 }
+            }
+            _ => {}
+        }
+        cx.notify();
+    }
+
+    fn add_file(&mut self, path: PathBuf) {
+        let path_str = path.to_string_lossy().into_owned();
+        
+        // Prevent duplicates
+        if self.items.iter().any(|i| i.path == path_str) {
+            return;
+        }
+
+        if let Some(item) = List::create_item_from_path(path) {
+            self.items.push(item);
+            // Optional: Sort items here if you want new files to appear in order
+        }
+    }
+
+    fn remove_file(&mut self, path: &Path) {
+        let path_str = path.to_string_lossy();
+        self.items.retain(|i| i.path != path_str);
+    }
+
+    fn rename_file(&mut self, from: &Path, to: &Path) {
+        let from_str = from.to_string_lossy();
+        if let Some(item) = self.items.iter_mut().find(|i| i.path == from_str) {
+            item.path = to.to_string_lossy().into_owned();
+            item.name = to.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+            item.item_type = if to.is_dir() { "Folder".to_string() } else { "File".to_string() };
+        }
     }
 }
 
@@ -78,7 +153,7 @@ impl Render for List {
             .gap_2()
             .items_start()
             .children(
-                self.items // 6. Iterate over the pre-loaded items
+                self.items
                     .iter()
                     .filter(|item| {
                         self.searched_string.is_empty() || 
