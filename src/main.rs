@@ -1,18 +1,24 @@
 mod icons;
 mod title_bar;
 mod list;
+
 use gpui::*;
-use gpui::Styled;
+use gpui::{AsyncApp, Styled, WeakEntity, Entity, AsyncWindowContext};
 use gpui_component::{input::*, *};
-// Remove the broken import
 use title_bar::TitleBar;
 use icons::LocalAssets;
 use list::List;
+use crossbeam_channel::{unbounded, Sender, Receiver};
+use notify::{Watcher, RecursiveMode, Event};
+use std::path::PathBuf;
+use std::time::Duration;
 
 pub struct Main {
     title_bar: Entity<TitleBar>,
     list: Entity<List>,
     input_state: Entity<InputState>,
+    // Keep watcher alive as long as the app is running
+    watcher: Option<notify::RecommendedWatcher>,
 }
 
 impl Main {
@@ -32,10 +38,58 @@ impl Main {
             });
         }).detach();
 
+        // Watcher Setup
+        let (tx, rx): (Sender<Event>, Receiver<Event>) = unbounded();
+        let mut watcher = notify::recommended_watcher(move |res| {
+            if let Ok(event) = res { let _ = tx.send(event); }
+        }).ok();
+        
+        if let Some(w) = watcher.as_mut() {
+            let base_path = std::env::var("USERPROFILE").unwrap_or_else(|_| "C:/".to_string());
+            let main_folders = vec!["Desktop", "Documents", "Images", "Videos", "Music", "Downloads", "Folders", "Executables", "Archives"];
+            for folder in main_folders {
+                let full_path = PathBuf::from(&base_path).join(folder);
+                if full_path.exists() {
+                    let _ = w.watch(&full_path, RecursiveMode::NonRecursive);
+                }
+            }
+        }
+        
+       let list_weak = list.downgrade();
+        
+        // Grab executor outside to avoid type inference issues
+        let executor = cx.background_executor().clone();
+
+        cx.spawn(move |_weak_main, cx: &mut AsyncApp| {
+            let cx = cx.clone();
+            async move {
+                loop {
+                    executor.timer(Duration::from_millis(200)).await;
+                
+                    let mut events = vec![];
+                    while let Ok(event) = rx.try_recv() {
+                        events.push(event);
+                    }
+                
+                    if !events.is_empty() {
+                        // Use cx.clone() to pass a handle by value without consuming the original
+                        let _ = list_weak.update(&mut cx.clone(), |list, cx| {
+                            for event in events {
+                                list.handle_fs_event(event, cx);
+                            }
+                        });
+                    }
+                }
+            }
+        }).detach();
+
+
+
         Self { 
             title_bar,
             input_state,
             list,
+            watcher,
         }
     }
 }
@@ -61,9 +115,7 @@ impl Render for Main {
                             .w_full()
                             .h_0()
                             .flex_grow()
-                            // Assign ID first (creates the state required for scrolling)
                             .id("list-scroll-view")
-                            // Enable scrolling (valid only on stateful elements)
                             .overflow_y_scroll() 
                             .child(self.list.clone())
                     )
@@ -87,20 +139,20 @@ fn main() {
             })?;
 
             let width = screen_bounds.size.width * 0.6;
-            let height = screen_bounds.size.height * 0.3;
+            let height = screen_bounds.size.height * 0.6; // Increased height slightly
             let x = screen_bounds.origin.x + (screen_bounds.size.width - width) / 2.0;
             let y = screen_bounds.origin.y + (screen_bounds.size.height - height) / 2.0;
 
             let options = WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(Bounds::new(point(x, y), size(width, height)))),
-                is_resizable: false, 
+                is_resizable: true, 
                 titlebar: None,
                 ..Default::default()
             };
 
             cx.open_window(options, |window, cx| {
                 let title_bar = cx.new(|_cx| TitleBar::new());
-                let list = cx.new(|_cx| List::new());
+                let list = cx.new(|cx| List::new(cx));
                 let view = cx.new(|cx| Main::new(title_bar, list, window, cx));
                 cx.new(|cx| Root::new(view, window, cx))
             })?;
