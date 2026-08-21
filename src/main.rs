@@ -11,15 +11,11 @@ use crate::ui::icons::{IconName, LocalAssets};
 use crate::ui::list::List;
 use crate::ui::log_console::LogConsole;
 use crate::ui::title_bar::{TitleBar, TitleBarEvent};
-use crossbeam_channel::{unbounded, Receiver, Sender};
+use async_channel::{unbounded, Receiver, Sender};
 use gpui::*;
 use gpui_component::{input::*, Icon, Root, StyledExt};
 use notify::{Event, RecursiveMode, Watcher};
 use std::sync::Arc;
-use std::time::Duration;
-
-/// How often the foreground task drains the background channels.
-const POLL_INTERVAL: Duration = Duration::from_millis(200);
 
 /// Requests raised by the tray and the hotkey, which run on their own threads
 /// and cannot touch the gpui context directly.
@@ -96,8 +92,11 @@ impl Main {
         }
     }
 
-    /// Drains the background channels on the foreground thread, which is the
-    /// only place the gpui entities may be updated from.
+    /// Forwards each background channel onto the foreground thread, which is
+    /// the only place the gpui entities may be updated from.
+    ///
+    /// Every pump awaits its channel rather than polling it on a timer, so an
+    /// idle application wakes up for nothing.
     fn spawn_event_pump(
         fs_events: Receiver<Event>,
         log_lines: Receiver<String>,
@@ -107,43 +106,56 @@ impl Main {
         cx: &mut Context<Self>,
     ) {
         let list = list.downgrade();
+        cx.spawn(move |_this: WeakEntity<Self>, cx: &mut AsyncApp| {
+            let mut cx = cx.clone();
+            async move {
+                while let Ok(event) = fs_events.recv().await {
+                    // Drain whatever else arrived in the meantime, so a burst
+                    // of events costs one redraw rather than one each.
+                    let updated = list.update(&mut cx, |list, cx| {
+                        let mut changed = list.handle_fs_event(event);
+                        while let Ok(event) = fs_events.try_recv() {
+                            changed |= list.handle_fs_event(event);
+                        }
+                        if changed {
+                            cx.notify();
+                        }
+                    });
+
+                    if updated.is_err() {
+                        break;
+                    }
+                }
+            }
+        })
+        .detach();
+
         let log_console = log_console.downgrade();
-        let executor = cx.background_executor().clone();
+        cx.spawn(move |_this: WeakEntity<Self>, cx: &mut AsyncApp| {
+            let mut cx = cx.clone();
+            async move {
+                while let Ok(line) = log_lines.recv().await {
+                    let updated = log_console.update(&mut cx, |console, cx| {
+                        console.append(line, cx);
+                        while let Ok(line) = log_lines.try_recv() {
+                            console.append(line, cx);
+                        }
+                    });
+
+                    if updated.is_err() {
+                        break;
+                    }
+                }
+            }
+        })
+        .detach();
 
         cx.spawn(move |this: WeakEntity<Self>, cx: &mut AsyncApp| {
             let mut cx = cx.clone();
             async move {
-                loop {
-                    executor.timer(POLL_INTERVAL).await;
-
-                    let events: Vec<Event> = fs_events.try_iter().collect();
-                    if !events.is_empty() {
-                        let updated = list.update(&mut cx, |list, cx| {
-                            for event in events {
-                                list.handle_fs_event(event, cx);
-                            }
-                        });
-                        if updated.is_err() {
-                            break;
-                        }
-                    }
-
-                    let lines: Vec<String> = log_lines.try_iter().collect();
-                    if !lines.is_empty() {
-                        let updated = log_console.update(&mut cx, |console, cx| {
-                            for line in lines {
-                                console.append(line, cx);
-                            }
-                        });
-                        if updated.is_err() {
-                            break;
-                        }
-                    }
-
-                    for command in commands.try_iter() {
-                        if this.update(&mut cx, |this, cx| this.handle_command(command, cx)).is_err() {
-                            return;
-                        }
+                while let Ok(command) = commands.recv().await {
+                    if this.update(&mut cx, |this, cx| this.handle_command(command, cx)).is_err() {
+                        break;
                     }
                 }
             }
@@ -153,6 +165,9 @@ impl Main {
 
     /// Sweeps Downloads into the home buckets, then rebuilds the index, exactly
     /// as the Java application did on startup.
+    ///
+    /// Everything that touches the disk runs on the background executor, so a
+    /// slow or crowded home folder never stalls the window.
     fn spawn_startup_sweep(list: &Entity<List>, cx: &mut Context<Self>) {
         let list = list.downgrade();
         let executor = cx.background_executor().clone();
@@ -160,7 +175,7 @@ impl Main {
         cx.spawn(move |_this: WeakEntity<Self>, cx: &mut AsyncApp| {
             let mut cx = cx.clone();
             async move {
-                let moved = executor
+                let rescanned = executor
                     .spawn(async move {
                         let home = home_dir();
 
@@ -179,12 +194,14 @@ impl Main {
                         let moved = mover::sweep(&home, &downloads);
                         log_bus::log(format!("[scan] moved={moved}"));
 
-                        moved
+                        // The sweep created the buckets and filled them, so the
+                        // index built before it ran is already out of date.
+                        (moved > 0).then(List::load_items)
                     })
                     .await;
 
-                if moved > 0 {
-                    let _ = list.update(&mut cx, |list, cx| list.reload("startup sweep", cx));
+                if let Some(items) = rescanned {
+                    let _ = list.update(&mut cx, |list, cx| list.apply_items(items, "startup sweep", cx));
                 }
             }
         })
@@ -280,7 +297,7 @@ fn start_watcher() -> (Option<notify::RecommendedWatcher>, Receiver<Event>) {
 
     let mut watcher = match notify::recommended_watcher(move |result: notify::Result<Event>| {
         if let Ok(event) = result {
-            let _ = tx.send(event);
+            let _ = tx.try_send(event);
         }
     }) {
         Ok(watcher) => watcher,
@@ -313,13 +330,13 @@ fn install_tray(commands: Sender<AppCommand>) -> Tray {
             TrayCommand::ToggleAutostart => AppCommand::ToggleAutostart,
             TrayCommand::Quit => AppCommand::Quit,
         };
-        let _ = commands.send(command);
+        let _ = commands.try_send(command);
     }))
 }
 
 fn start_hotkey(commands: Sender<AppCommand>) -> HotkeyService {
     let mut hotkey = HotkeyService::new(Arc::new(move || {
-        let _ = commands.send(AppCommand::ToggleWindow);
+        let _ = commands.try_send(AppCommand::ToggleWindow);
     }))
     .on_registration(Arc::new(|result| match result {
         Ok(name) => log_bus::log(format!("[hotkey] {name} registered")),
@@ -334,7 +351,7 @@ fn start_hotkey(commands: Sender<AppCommand>) -> HotkeyService {
 fn capture_log_lines() -> Receiver<String> {
     let (tx, rx) = unbounded::<String>();
     log_bus::add_listener(move |line| {
-        let _ = tx.send(line.to_string());
+        let _ = tx.try_send(line.to_string());
     });
     rx
 }
@@ -342,7 +359,7 @@ fn capture_log_lines() -> Receiver<String> {
 /// Handles the flags the installers and the packaging scripts use, and reports
 /// whether the graphical application should still start.
 fn run_cli(arguments: &[String]) -> Option<i32> {
-    let Some(flag) = arguments.first() else { return None };
+    let flag = arguments.first()?;
 
     let result = match flag.as_str() {
         "--enable-autostart" => autostart::enable().map(|()| "autostart enabled".to_string()),
