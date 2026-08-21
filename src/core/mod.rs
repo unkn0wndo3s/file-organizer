@@ -3,10 +3,7 @@ pub mod init;
 pub mod log_bus;
 pub mod model;
 pub mod mover;
-pub mod planner;
-pub mod rules;
 pub mod scanner;
-pub mod service;
 
 use std::path::PathBuf;
 

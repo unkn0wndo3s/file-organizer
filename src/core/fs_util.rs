@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use std::io;
 use std::path::{Path, PathBuf};
 
@@ -13,20 +11,20 @@ pub fn extension_lower(name: &str) -> String {
     }
 }
 
-/// Whether the entry is hidden according to the platform's convention.
-pub fn is_hidden(path: &Path) -> bool {
-    if file_name_of(path).starts_with('.') {
-        return true;
+/// Splits a file name into its stem and its dot prefixed extension.
+pub fn split_extension(file_name: &str) -> (&str, &str) {
+    match file_name.rfind('.') {
+        Some(index) if index > 0 => file_name.split_at(index),
+        _ => (file_name, ""),
     }
-    has_windows_attributes(path, WindowsAttributes::Hidden)
 }
 
-/// Whether the entry is hidden or, on Windows, flagged as a system entry.
-pub fn is_hidden_or_system(path: &Path) -> bool {
-    if file_name_of(path).starts_with('.') {
-        return true;
-    }
-    has_windows_attributes(path, WindowsAttributes::HiddenOrSystem)
+/// Whether the entry is hidden according to the platform's convention.
+///
+/// The name is passed alongside the path because callers already have it, and
+/// on Unix it is the only thing that matters.
+pub fn is_hidden(name: &str, path: &Path) -> bool {
+    name.starts_with('.') || has_hidden_attribute(path)
 }
 
 /// Builds a destination path inside `dir` that does not collide with an
@@ -37,13 +35,10 @@ pub fn unique_target(dir: &Path, file_name: &str) -> io::Result<PathBuf> {
         return Ok(candidate);
     }
 
-    let (base, dot_extension) = match file_name.rfind('.') {
-        Some(index) if index > 0 => (&file_name[..index], &file_name[index..]),
-        _ => (file_name, ""),
-    };
+    let (stem, dot_extension) = split_extension(file_name);
 
     for counter in 1..=u32::MAX {
-        let alternative = dir.join(format!("{base} ({counter}){dot_extension}"));
+        let alternative = dir.join(format!("{stem} ({counter}){dot_extension}"));
         if !alternative.exists() {
             return Ok(alternative);
         }
@@ -55,34 +50,20 @@ pub fn unique_target(dir: &Path, file_name: &str) -> io::Result<PathBuf> {
     ))
 }
 
-fn file_name_of(path: &Path) -> String {
-    path.file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_default()
-}
-
-enum WindowsAttributes {
-    Hidden,
-    HiddenOrSystem,
-}
-
 #[cfg(windows)]
-fn has_windows_attributes(path: &Path, wanted: WindowsAttributes) -> bool {
+fn has_hidden_attribute(path: &Path) -> bool {
     use std::os::windows::fs::MetadataExt;
 
     const FILE_ATTRIBUTE_HIDDEN: u32 = 0x2;
     const FILE_ATTRIBUTE_SYSTEM: u32 = 0x4;
 
-    let mask = match wanted {
-        WindowsAttributes::Hidden => FILE_ATTRIBUTE_HIDDEN,
-        WindowsAttributes::HiddenOrSystem => FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM,
-    };
-
     std::fs::symlink_metadata(path)
-        .map(|metadata| metadata.file_attributes() & mask != 0)
+        .map(|metadata| metadata.file_attributes() & (FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM) != 0)
         .unwrap_or(false)
 }
 
 #[cfg(not(windows))]
-fn has_windows_attributes(_path: &Path, _wanted: WindowsAttributes) -> bool {
+fn has_hidden_attribute(_path: &Path) -> bool {
     false
 }
 
@@ -104,6 +85,13 @@ mod tests {
     }
 
     #[test]
+    fn splitting_keeps_the_dot_with_the_extension() {
+        assert_eq!(split_extension("note.txt"), ("note", ".txt"));
+        assert_eq!(split_extension("README"), ("README", ""));
+        assert_eq!(split_extension(".gitignore"), (".gitignore", ""));
+    }
+
+    #[test]
     fn unique_target_suffixes_around_the_extension() {
         let dir = std::env::temp_dir().join("file-organizer-unique-target");
         let _ = std::fs::remove_dir_all(&dir);
@@ -122,7 +110,7 @@ mod tests {
 
     #[test]
     fn dotfiles_are_hidden_on_every_platform() {
-        assert!(is_hidden(Path::new("/home/user/.bashrc")));
-        assert!(!is_hidden(Path::new("/home/user/notes.txt")));
+        assert!(is_hidden(".bashrc", Path::new("/home/user/.bashrc")));
+        assert!(!is_hidden("notes.txt", Path::new("/home/user/notes.txt")));
     }
 }
