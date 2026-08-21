@@ -2,8 +2,7 @@ mod core;
 mod platform;
 mod ui;
 
-use crate::core::init::ensure_base_and_folders;
-use crate::core::{home_dir, log_bus, mover};
+use crate::core::{folders, home_dir, log_bus, mover};
 use crate::platform::autostart;
 use crate::platform::hotkey::HotkeyService;
 use crate::platform::quick_access;
@@ -165,21 +164,16 @@ impl Main {
                     .spawn(async move {
                         let home = home_dir();
 
-                        match ensure_base_and_folders(&home) {
-                            Ok(folders) => {
-                                for folder in &folders {
-                                    let pinned = quick_access::pin(folder);
-                                    log_bus::log(format!(
-                                        "[pin] {} {}",
-                                        if pinned { "OK" } else { "KO" },
-                                        folder.display()
-                                    ));
-                                }
-                            }
-                            Err(error) => log_bus::log(format!("[init:error] {error}")),
+                        for folder in folders::managed_paths(&home) {
+                            let pinned = quick_access::pin(&folder);
+                            log_bus::log(format!(
+                                "[pin] {} {}",
+                                if pinned { "OK" } else { "KO" },
+                                folder.display()
+                            ));
                         }
 
-                        let downloads = home.join("Downloads");
+                        let downloads = home.join(folders::DOWNLOADS);
                         log_bus::log(format!("[scan] start {}", downloads.display()));
 
                         let moved = mover::sweep(&home, &downloads);
@@ -397,6 +391,13 @@ fn main() {
     }
 
     let log_lines = capture_log_lines();
+
+    // The managed folders have to exist before anything else: the index reads
+    // them and the watcher can only register a folder that is already there.
+    if let Err(error) = folders::ensure_all(&home_dir()) {
+        log_bus::log(format!("[init:error] {error}"));
+    }
+
     let app = Application::new().with_assets(LocalAssets::new());
 
     app.run(move |cx| {

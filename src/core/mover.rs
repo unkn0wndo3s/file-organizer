@@ -4,41 +4,12 @@
 //! written, a cross device move copies before it deletes, the copy is verified
 //! against the source, and a failure at any point leaves the source untouched.
 
+use crate::core::folders;
 use crate::core::fs_util::{extension_lower, unique_target};
 use crate::core::log_bus;
-use std::collections::HashMap;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
-
-/// Home-relative folder collecting directories moved out of Downloads.
-const FOLDERS_BUCKET: &str = "Folders";
-
-/// Extension to bucket table, built once and shared.
-fn buckets() -> &'static HashMap<&'static str, &'static str> {
-    static BUCKETS: OnceLock<HashMap<&'static str, &'static str>> = OnceLock::new();
-    BUCKETS.get_or_init(|| {
-        let groups: [(&str, &[&str]); 6] = [
-            ("Documents", &["txt", "pdf", "doc", "docx", "rtf", "odt", "xls", "xlsx", "csv", "ppt", "pptx", "md", "json", "xml", "yaml", "yml"]),
-            ("Images", &["jpg", "jpeg", "png", "gif", "bmp", "tif", "tiff", "webp", "heic", "svg", "ico"]),
-            ("Musics", &["mp3", "wav", "flac", "aac", "ogg", "m4a", "wma", "opus"]),
-            ("Videos", &["mp4", "mkv", "avi", "mov", "wmv", "webm", "m4v"]),
-            ("Executables", &["exe", "msi", "iso", "jar", "bat", "cmd", "sh", "appimage", "deb", "rpm", "pkg.tar.zst"]),
-            ("Archives", &["zip", "rar", "7z", "tar", "gz", "bz2", "xz", "zst"]),
-        ];
-
-        groups
-            .into_iter()
-            .flat_map(|(bucket, extensions)| extensions.iter().map(move |extension| (*extension, bucket)))
-            .collect()
-    })
-}
-
-/// Home-relative bucket an extension belongs to, or `None` when unknown.
-fn bucket_for(extension: &str) -> Option<&'static str> {
-    buckets().get(extension).copied()
-}
 
 /// Why an entry was left where it is.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -100,9 +71,9 @@ pub fn move_path(home: &Path, path: &Path) -> Outcome {
     };
 
     let bucket = if metadata.is_dir() {
-        FOLDERS_BUCKET
+        folders::FOLDERS
     } else if metadata.is_file() {
-        match bucket_for(&extension_lower(&name)) {
+        match folders::for_extension(&extension_lower(&name)) {
             Some(bucket) => bucket,
             None => return Outcome::Skipped { path: path.to_path_buf(), reason: Skipped::UnknownExtension },
         }
@@ -280,16 +251,6 @@ mod tests {
     }
 
     #[test]
-    fn extensions_resolve_to_their_home_bucket() {
-        assert_eq!(bucket_for("docx"), Some("Documents"));
-        assert_eq!(bucket_for("flac"), Some("Musics"));
-        assert_eq!(bucket_for("7z"), Some("Archives"));
-        assert_eq!(bucket_for("appimage"), Some("Executables"));
-        assert_eq!(bucket_for("qwerty"), None);
-        assert_eq!(bucket_for(""), None);
-    }
-
-    #[test]
     fn a_file_lands_in_its_bucket_with_its_content_intact() {
         let home = TempHome::new("move-file");
         let source = home.downloads().join("song.mp3");
@@ -299,7 +260,7 @@ mod tests {
 
         assert!(outcome.moved(), "{}", outcome.describe());
         assert!(!source.exists());
-        let target = home.path().join("Musics").join("song.mp3");
+        let target = home.path().join(folders::MUSIC).join("song.mp3");
         assert_eq!(fs::read(&target).unwrap(), b"audio payload");
     }
 
@@ -340,7 +301,7 @@ mod tests {
         assert!(move_path(home.path(), &source).moved());
 
         assert!(!source.exists());
-        let target = home.path().join(FOLDERS_BUCKET).join("project");
+        let target = home.path().join(folders::FOLDERS).join("project");
         assert_eq!(fs::read(target.join("nested").join("file.txt")).unwrap(), b"deep");
     }
 
@@ -387,8 +348,8 @@ mod tests {
         fs::write(home.downloads().join("c.qwerty"), b"?").unwrap();
 
         assert_eq!(sweep(home.path(), &home.downloads()), 2);
-        assert!(home.path().join("Images").join("a.png").exists());
-        assert!(home.path().join("Musics").join("b.mp3").exists());
+        assert!(home.path().join(folders::PICTURES).join("a.png").exists());
+        assert!(home.path().join(folders::MUSIC).join("b.mp3").exists());
         assert!(home.downloads().join("c.qwerty").exists());
     }
 

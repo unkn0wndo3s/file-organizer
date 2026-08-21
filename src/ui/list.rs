@@ -5,7 +5,7 @@
 //! instead of resolving a name back to a file.
 
 use crate::core::fs_util::extension_lower;
-use crate::core::init::MANAGED_FOLDERS;
+use crate::core::folders;
 use crate::core::model::FsEntry;
 use crate::core::scanner::FileScanner;
 use crate::core::{home_dir, log_bus};
@@ -89,8 +89,7 @@ impl List {
 
     /// The managed folders that are indexed and watched.
     pub fn indexed_roots() -> Vec<PathBuf> {
-        let home = home_dir();
-        MANAGED_FOLDERS.iter().map(|folder| home.join(folder)).collect()
+        folders::managed_paths(&home_dir())
     }
 
     /// Rebuilds the index from disk, keeping the current search query.

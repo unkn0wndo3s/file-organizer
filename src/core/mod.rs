@@ -1,5 +1,5 @@
 pub mod fs_util;
-pub mod init;
+pub mod folders;
 pub mod log_bus;
 pub mod model;
 pub mod mover;
