@@ -1,0 +1,116 @@
+# Builds every release artifact on the OS it actually needs, so the whole
+# release can be cut by pushing a tag from any machine, without needing a
+# Windows box: the Windows binary and installer specifically need the
+# proprietary fxc.exe shader compiler from the Windows SDK, which only a
+# real Windows runner can provide (gpui's Direct3D 11 renderer compiles its
+# HLSL shaders to DXBC through it; the open source dxc alternative only
+# emits DXIL, which a D3D11 device cannot load).
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to build and attach assets to"
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  # workflow_dispatch builds an existing tag; a tag push builds itself.
+  RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+
+jobs:
+  linux:
+    name: Linux binary and .deb
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            dpkg-dev pkg-config libx11-dev libxkbcommon-dev libwayland-dev \
+            libfontconfig1-dev libfreetype6-dev libvulkan-dev libasound2-dev
+
+      - name: Test
+        run: cargo test --release --locked
+
+      - name: Build release binary
+        run: cargo build --release --locked
+
+      - name: Package the binary
+        run: |
+          install -Dm755 target/release/file-organizer \
+            "dist/file-organizer-${RELEASE_TAG}-linux-x86_64"
+
+      - name: Build the .deb
+        run: ./packaging/debian/build-deb.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-artifacts
+          path: |
+            dist/file-organizer-${{ env.RELEASE_TAG }}-linux-x86_64
+            target/debian/*.deb
+
+  windows:
+    name: Windows binary and installer
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Test
+        run: cargo test --release --locked
+
+      - name: Build release binary
+        run: cargo build --release --locked --target x86_64-pc-windows-msvc
+
+      - name: Build the installer
+        shell: pwsh
+        run: |
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) {
+            choco install innosetup --no-progress -y
+          }
+          & $iscc installer.iss
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-artifacts
+          path: |
+            target/x86_64-pc-windows-msvc/release/file-organizer.exe
+            FileOrganizer-Setup.exe
+
+  release:
+    name: Publish the release
+    needs: [linux, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Publish
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          # Never overwrite an existing release's title or notes; this job
+          # only attaches the freshly built files to whatever is already
+          # published under that tag.
+          files: artifacts/*

@@ -213,14 +213,26 @@ Builds the release binary itself; no separate `cargo build` needed first.
 
 ### Windows binary
 
-Build **on Windows**, with the MSVC toolchain — cross-compiling gpui's
-graphics stack from Linux is not a supported path:
+Build **on Windows**, with the MSVC toolchain:
 
 ```powershell
 cargo build --release --target x86_64-pc-windows-msvc
 ```
 
 **Output:** `target\x86_64-pc-windows-msvc\release\file-organizer.exe`
+
+Cross-compiling this from Linux is not possible, not just unsupported: gpui's
+Direct3D 11 renderer compiles its HLSL shaders to DXBC through `fxc.exe`, part
+of the proprietary Windows SDK. The open source alternative, `dxc`, takes the
+same command line but only emits DXIL (the Shader Model 6 / D3D12 format) —
+tested against gpui's own shaders, it builds without error and produces a
+binary a D3D11 device cannot load. There is no portable, redistributable tool
+that emits DXBC outside of a real Windows SDK install.
+
+`.github/workflows/release.yml` builds this leg on a `windows-latest` GitHub
+Actions runner, so cutting a release never actually requires a Windows
+machine — push a `v*` tag from anywhere and it, the Linux binary and the
+`.deb` all build and attach themselves to that tag's release.
 
 ### Windows installer
 
