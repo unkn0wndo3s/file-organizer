@@ -3,7 +3,6 @@ mod platform;
 mod ui;
 
 use crate::core::init::ensure_base_and_folders;
-use crate::core::scanner::FileScanner;
 use crate::core::{home_dir, log_bus, mover};
 use crate::platform::hotkey::HotkeyService;
 use crate::platform::quick_access;
@@ -181,17 +180,8 @@ impl Main {
                         let downloads = home.join("Downloads");
                         log_bus::log(format!("[scan] start {}", downloads.display()));
 
-                        let mut moved = 0usize;
-                        FileScanner::new().scan_top_level_stream(&[&downloads], |entry| {
-                            log_bus::log(format!(
-                                "{} {}",
-                                if entry.is_directory { "[folder]" } else { "[file]  " },
-                                entry.path.display()
-                            ));
-                            log_bus::log(mover::move_path(&home, &entry.path));
-                            moved += 1;
-                        });
-                        log_bus::log(format!("[scan] processed={moved}"));
+                        let moved = mover::sweep(&home, &downloads);
+                        log_bus::log(format!("[scan] moved={moved}"));
 
                         moved
                     })
