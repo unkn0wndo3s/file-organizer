@@ -1,9 +1,6 @@
 //! Watches the foreground window so the global hotkey can step aside while the
 //! user is typing in an editor or playing a game.
 
-// Most of this surface is only reachable on Windows.
-#![allow(dead_code)]
-
 use crate::core::log_bus;
 use std::sync::Arc;
 
@@ -54,25 +51,6 @@ const GAME_CLASSES: &[&str] = &[
     "VulkanWindow",
     "MetalWindow",
     "GameEngine",
-];
-
-/// Window classes used by browsers, which must keep the hotkey available.
-const BROWSER_CLASSES: &[&str] = &[
-    "Chrome_WidgetWin_1",
-    "Chrome_WidgetWin_0",
-    "MozillaWindowClass",
-    "MozillaUIWindow",
-    "IEFrame",
-    "EdgeUiInputTopWndClass",
-    "ApplicationFrameWindow",
-    "Safari",
-    "OperaWindow",
-    "Vivaldi",
-    "Brave",
-    "TorBrowser",
-    "Waterfox",
-    "PaleMoon",
-    "SeaMonkey",
 ];
 
 /// Title fragments that identify a text editor.
@@ -131,14 +109,25 @@ const BROWSER_KEYWORDS: &[&str] = &[
 ];
 
 /// Invoked whenever the foreground window changes.
-pub type FocusChangeCallback = Arc<dyn Fn(FocusChange) + Send + Sync + 'static>;
+pub type FocusChangeCallback = Arc<dyn Fn(FocusVerdict) + Send + Sync + 'static>;
 
-/// Describes the window that just took focus.
-#[derive(Clone, Debug)]
-pub struct FocusChange {
-    pub window_title: String,
-    pub class_name: String,
-    pub should_disable_hotkey: bool,
+/// What the newly focused window means for the global shortcut.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FocusVerdict {
+    /// The window is an editor or a game; give the shortcut back to it.
+    ReleaseHotkey,
+    /// An ordinary window; the shortcut stays ours.
+    KeepHotkey,
+}
+
+impl FocusVerdict {
+    fn of(title: &str, class_name: &str) -> Self {
+        if should_disable_hotkey(title, class_name) {
+            Self::ReleaseHotkey
+        } else {
+            Self::KeepHotkey
+        }
+    }
 }
 
 /// Decides whether the hotkey should be released while `title` / `class_name`
@@ -210,7 +199,7 @@ impl Drop for FocusMonitor {
 
 #[cfg(windows)]
 mod imp {
-    use super::{should_disable_hotkey, FocusChange, FocusChangeCallback};
+    use super::{FocusChangeCallback, FocusVerdict};
     use crate::core::log_bus;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
@@ -233,16 +222,12 @@ mod imp {
                     if !current.is_null() && current != last_window {
                         last_window = current;
 
-                        let window_title = window_text(current);
+                        let title = window_text(current);
                         let class_name = window_class(current);
-                        let should_disable = should_disable_hotkey(&window_title, &class_name);
+                        let verdict = FocusVerdict::of(&title, &class_name);
 
-                        log_bus::log(format!("[focus] focus moved to: {window_title} ({class_name})"));
-                        if should_disable {
-                            log_bus::log("[focus] focused application requires the hotkey to be released");
-                        }
-
-                        callback(FocusChange { window_title, class_name, should_disable_hotkey: should_disable });
+                        log_bus::log(format!("[focus] focus moved to: {title} ({class_name}) -> {verdict:?}"));
+                        callback(verdict);
                     }
 
                     std::thread::sleep(Duration::from_millis(100));
@@ -278,15 +263,125 @@ mod imp {
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
+mod imp {
+    use super::{FocusChangeCallback, FocusVerdict};
+    use crate::core::log_bus;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+    use std::time::Duration;
+    use x11rb::connection::Connection;
+    use x11rb::protocol::xproto::{AtomEnum, ConnectionExt, Window};
+
+    /// Longest property value we care to read, in 32 bit units.
+    const MAX_PROPERTY_WORDS: u32 = 1024;
+
+    pub fn spawn(callback: FocusChangeCallback, running: Arc<AtomicBool>) {
+        if std::env::var_os("DISPLAY").is_none() {
+            log_bus::log("[focus] focus monitoring needs an X display");
+            running.store(false, Ordering::SeqCst);
+            return;
+        }
+
+        std::thread::Builder::new()
+            .name("focus-monitor".to_string())
+            .spawn(move || {
+                if let Err(error) = run(&callback, &running) {
+                    log_bus::log(format!("[focus:error] {error}"));
+                }
+                running.store(false, Ordering::SeqCst);
+                log_bus::log("[focus] monitoring thread finished");
+            })
+            .expect("focus monitor thread can be spawned");
+    }
+
+    fn run(callback: &FocusChangeCallback, running: &AtomicBool) -> Result<(), String> {
+        let (connection, screen_index) = x11rb::connect(None).map_err(|error| error.to_string())?;
+        let root = connection.setup().roots[screen_index].root;
+
+        let active_window = intern(&connection, b"_NET_ACTIVE_WINDOW")?;
+        let net_wm_name = intern(&connection, b"_NET_WM_NAME")?;
+        let utf8_string = intern(&connection, b"UTF8_STRING")?;
+
+        log_bus::log("[focus] monitoring thread started");
+        let mut last_window = None;
+
+        while running.load(Ordering::SeqCst) {
+            if let Some(window) = focused_window(&connection, root, active_window)
+                && last_window != Some(window)
+            {
+                last_window = Some(window);
+
+                let title = title_of(&connection, window, net_wm_name, utf8_string);
+                let class_name = class_of(&connection, window);
+                let verdict = FocusVerdict::of(&title, &class_name);
+
+                log_bus::log(format!("[focus] focus moved to: {title} ({class_name}) -> {verdict:?}"));
+                callback(verdict);
+            }
+
+            std::thread::sleep(Duration::from_millis(100));
+        }
+
+        Ok(())
+    }
+
+    fn intern(connection: &impl Connection, name: &[u8]) -> Result<u32, String> {
+        connection
+            .intern_atom(false, name)
+            .map_err(|error| error.to_string())?
+            .reply()
+            .map(|reply| reply.atom)
+            .map_err(|error| error.to_string())
+    }
+
+    /// Reads `_NET_ACTIVE_WINDOW` off the root window, which is how EWMH
+    /// compliant window managers publish the focused window.
+    fn focused_window(connection: &impl Connection, root: Window, active_window: u32) -> Option<Window> {
+        let reply = connection
+            .get_property(false, root, active_window, AtomEnum::WINDOW, 0, 1)
+            .ok()?
+            .reply()
+            .ok()?;
+
+        reply.value32()?.next().filter(|window| *window != 0)
+    }
+
+    /// Prefers the UTF-8 `_NET_WM_NAME`, falling back to the legacy `WM_NAME`.
+    fn title_of(connection: &impl Connection, window: Window, net_wm_name: u32, utf8_string: u32) -> String {
+        let utf8 = text_property(connection, window, net_wm_name, utf8_string);
+        if !utf8.is_empty() {
+            return utf8;
+        }
+        text_property(connection, window, AtomEnum::WM_NAME.into(), AtomEnum::STRING.into())
+    }
+
+    /// `WM_CLASS` holds an instance name and a class name, NUL separated; the
+    /// class name is the one that identifies the application.
+    fn class_of(connection: &impl Connection, window: Window) -> String {
+        let raw = text_property(connection, window, AtomEnum::WM_CLASS.into(), AtomEnum::STRING.into());
+        raw.split('\0').nth(1).unwrap_or(&raw).trim().to_string()
+    }
+
+    fn text_property(connection: &impl Connection, window: Window, property: u32, kind: u32) -> String {
+        let Ok(cookie) = connection.get_property(false, window, property, kind, 0, MAX_PROPERTY_WORDS) else {
+            return String::new();
+        };
+        let Ok(reply) = cookie.reply() else { return String::new() };
+
+        String::from_utf8_lossy(&reply.value).trim_end_matches('\0').trim().to_string()
+    }
+}
+
+#[cfg(not(any(windows, target_os = "linux")))]
 mod imp {
     use super::FocusChangeCallback;
     use crate::core::log_bus;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
 
-    /// Focus tracking relies on the Win32 foreground window, so elsewhere the
-    /// monitor simply stays idle and leaves the hotkey untouched.
+    /// Outside Windows and X11 there is no way to observe the focused window,
+    /// so the monitor stays idle and leaves the hotkey untouched.
     pub fn spawn(_callback: FocusChangeCallback, running: Arc<AtomicBool>) {
         log_bus::log("[focus] focus monitoring is only available on Windows");
         running.store(false, Ordering::SeqCst);

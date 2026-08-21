@@ -4,11 +4,8 @@
 //! the message pump and every later (un)registration all happen on one
 //! dedicated thread. Other threads drive it by posting messages to it.
 
-// Most of this surface is only reachable on Windows.
-#![allow(dead_code)]
-
 use crate::core::log_bus;
-use crate::platform::focus_monitor::FocusMonitor;
+use crate::platform::focus_monitor::{FocusMonitor, FocusVerdict};
 use std::sync::Arc;
 
 /// Human readable name of the shortcut, used in log lines.
@@ -50,8 +47,8 @@ impl HotkeyService {
         let handle = imp::start(Arc::clone(&self.on_toggle), self.on_registration.clone());
 
         let monitor_handle = handle.clone();
-        let monitor = FocusMonitor::new(Arc::new(move |change: crate::platform::focus_monitor::FocusChange| {
-            monitor_handle.set_active(!change.should_disable_hotkey);
+        let monitor = FocusMonitor::new(Arc::new(move |verdict| {
+            monitor_handle.set_active(verdict == FocusVerdict::KeepHotkey);
         }));
         monitor.start();
 
@@ -239,13 +236,185 @@ mod imp {
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
+mod imp {
+    use super::{RegistrationCallback, ToggleCallback, HOTKEY_NAME};
+    use crate::core::log_bus;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+    use std::time::Duration;
+    use x11rb::connection::Connection;
+    use x11rb::protocol::xproto::{ConnectionExt, GrabMode, Keycode, ModMask};
+    use x11rb::protocol::Event;
+
+    /// X11 keysym for the space bar.
+    const XK_SPACE: u32 = 0x0020;
+
+    /// How long the event loop sleeps when the X queue is empty.
+    const IDLE_POLL: Duration = Duration::from_millis(50);
+
+    /// Lock modifier combinations to grab alongside Control, so the shortcut
+    /// still fires with Caps Lock, Num Lock or Scroll Lock engaged.
+    const LOCK_COMBINATIONS: [u16; 8] = [
+        0,
+        1 << 1,           // Lock (Caps Lock)
+        1 << 4,           // Mod2 (Num Lock)
+        1 << 7,           // Mod5 (Scroll Lock)
+        (1 << 1) | (1 << 4),
+        (1 << 1) | (1 << 7),
+        (1 << 4) | (1 << 7),
+        (1 << 1) | (1 << 4) | (1 << 7),
+    ];
+
+    /// Remote control for the hotkey thread, safe to share across threads.
+    #[derive(Clone)]
+    pub struct Handle {
+        active: Arc<AtomicBool>,
+        running: Arc<AtomicBool>,
+    }
+
+    impl Handle {
+        /// Mutes or unmutes the shortcut.
+        ///
+        /// The X grab itself stays in place: releasing and retaking it on every
+        /// focus change would race with the application that just took the
+        /// focus, and could drop the grab for good.
+        pub fn set_active(&self, active: bool) {
+            self.active.store(active, Ordering::Relaxed);
+        }
+
+        pub fn stop(&self) {
+            self.running.store(false, Ordering::Relaxed);
+        }
+    }
+
+    pub fn start(on_toggle: ToggleCallback, on_registration: Option<RegistrationCallback>) -> Handle {
+        let handle = Handle {
+            active: Arc::new(AtomicBool::new(true)),
+            running: Arc::new(AtomicBool::new(true)),
+        };
+
+        // Wayland deliberately keeps global grabs away from applications; only
+        // a compositor binding can provide the shortcut there.
+        if std::env::var_os("DISPLAY").is_none() {
+            let reason = if std::env::var_os("WAYLAND_DISPLAY").is_some() {
+                "Wayland has no global shortcut API, bind the shortcut in your compositor instead"
+            } else {
+                "no X display available"
+            };
+            log_bus::log(format!("[hotkey:error] {HOTKEY_NAME}: {reason}"));
+            if let Some(callback) = on_registration {
+                callback(Err(format!("{HOTKEY_NAME}: {reason}")));
+            }
+            return handle;
+        }
+
+        if std::env::var_os("WAYLAND_DISPLAY").is_some() {
+            // XWayland forwards only the key presses of X11 clients, so the
+            // grab is real but silent while a native Wayland window is focused.
+            log_bus::log(format!(
+                "[hotkey:warning] running under Wayland: {HOTKEY_NAME} reaches XWayland windows only, \
+                 bind it in your compositor for full coverage"
+            ));
+        }
+
+        let thread_handle = handle.clone();
+        std::thread::Builder::new()
+            .name("hotkey-loop".to_string())
+            .spawn(move || {
+                if let Err(reason) = run(&on_toggle, &thread_handle) {
+                    log_bus::log(format!("[hotkey:error] unable to grab {HOTKEY_NAME}: {reason}"));
+                    if let Some(callback) = on_registration {
+                        callback(Err(format!("{HOTKEY_NAME}: {reason}")));
+                    }
+                    return;
+                }
+                if let Some(callback) = on_registration {
+                    callback(Ok(HOTKEY_NAME));
+                }
+            })
+            .expect("hotkey thread can be spawned");
+
+        handle
+    }
+
+    /// Grabs the shortcut on the root window and dispatches key presses until
+    /// the handle is stopped. Errors only describe the grab itself.
+    fn run(on_toggle: &ToggleCallback, handle: &Handle) -> Result<(), String> {
+        let (connection, screen_index) = x11rb::connect(None).map_err(|error| error.to_string())?;
+        let root = connection.setup().roots[screen_index].root;
+        let keycode = keycode_for(&connection, XK_SPACE)?;
+
+        for lock in LOCK_COMBINATIONS {
+            connection
+                .grab_key(
+                    true,
+                    root,
+                    ModMask::CONTROL | ModMask::from(lock),
+                    keycode,
+                    GrabMode::ASYNC,
+                    GrabMode::ASYNC,
+                )
+                .map_err(|error| error.to_string())?;
+        }
+        connection.flush().map_err(|error| error.to_string())?;
+        log_bus::log(format!("[hotkey] {HOTKEY_NAME} grabbed on the root window"));
+
+        while handle.running.load(Ordering::Relaxed) {
+            match connection.poll_for_event() {
+                Ok(Some(Event::KeyPress(event))) if event.detail == keycode => {
+                    if handle.active.load(Ordering::Relaxed) {
+                        log_bus::log("[hotkey] hotkey detected");
+                        on_toggle();
+                    }
+                }
+                Ok(Some(_)) => {}
+                Ok(None) => std::thread::sleep(IDLE_POLL),
+                Err(error) => {
+                    log_bus::log(format!("[hotkey:error] X connection lost: {error}"));
+                    return Ok(());
+                }
+            }
+        }
+
+        for lock in LOCK_COMBINATIONS {
+            let _ = connection.ungrab_key(keycode, root, ModMask::CONTROL | ModMask::from(lock));
+        }
+        let _ = connection.flush();
+        log_bus::log(format!("[hotkey] {HOTKEY_NAME} released"));
+
+        Ok(())
+    }
+
+    /// Resolves a keysym to the keycode the current layout assigns it.
+    fn keycode_for(connection: &impl Connection, keysym: u32) -> Result<Keycode, String> {
+        let setup = connection.setup();
+        let first = setup.min_keycode;
+        let count = setup.max_keycode - first + 1;
+
+        let mapping = connection
+            .get_keyboard_mapping(first, count)
+            .map_err(|error| error.to_string())?
+            .reply()
+            .map_err(|error| error.to_string())?;
+
+        let per_keycode = usize::from(mapping.keysyms_per_keycode).max(1);
+        mapping
+            .keysyms
+            .chunks(per_keycode)
+            .position(|symbols| symbols.contains(&keysym))
+            .map(|index| first + index as Keycode)
+            .ok_or_else(|| "the current keyboard layout has no space key".to_string())
+    }
+}
+
+#[cfg(not(any(windows, target_os = "linux")))]
 mod imp {
     use super::{RegistrationCallback, ToggleCallback, HOTKEY_NAME};
     use crate::core::log_bus;
 
-    /// The shortcut is claimed through the Win32 hotkey API, which has no
-    /// portable equivalent, so elsewhere the service reports itself unavailable.
+    /// Outside Windows and X11 there is no global shortcut backend, so the
+    /// service reports itself unavailable.
     #[derive(Clone)]
     pub struct Handle;
 

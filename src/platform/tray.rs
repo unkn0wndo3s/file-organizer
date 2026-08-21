@@ -5,9 +5,6 @@
 //! the thread that created them, so the icon, its menu and its message pump all
 //! live on one dedicated thread.
 
-// Most of this surface is only reachable on Windows.
-#![allow(dead_code)]
-
 use crate::core::log_bus;
 use std::sync::Arc;
 
@@ -322,13 +319,121 @@ mod imp {
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
+mod imp {
+    use super::{TrayCallback, TrayCommand, TRAY_TOOLTIP};
+    use crate::core::log_bus;
+    use ksni::blocking::TrayMethods;
+    use ksni::menu::StandardItem;
+    use ksni::{Icon, MenuItem};
+
+    /// The freedesktop icon name desktops look up in the current theme, and the
+    /// name the installed .desktop file carries.
+    const ICON_NAME: &str = "file-organizer";
+
+    /// Bridges the StatusNotifierItem the desktop talks to onto our callback.
+    struct FileOrganizerTray {
+        callback: TrayCallback,
+    }
+
+    impl ksni::Tray for FileOrganizerTray {
+        fn id(&self) -> String {
+            env!("CARGO_PKG_NAME").to_string()
+        }
+
+        fn title(&self) -> String {
+            TRAY_TOOLTIP.to_string()
+        }
+
+        fn icon_name(&self) -> String {
+            ICON_NAME.to_string()
+        }
+
+        fn icon_pixmap(&self) -> Vec<Icon> {
+            // A themed icon is preferred, but a desktop that cannot find one
+            // would otherwise show nothing at all.
+            vec![fallback_icon()]
+        }
+
+        fn activate(&mut self, _x: i32, _y: i32) {
+            (self.callback)(TrayCommand::Toggle);
+        }
+
+        fn menu(&self) -> Vec<MenuItem<Self>> {
+            vec![
+                command_item("Open (Ctrl+Space)", TrayCommand::Open),
+                command_item("Hide", TrayCommand::Hide),
+                command_item("Console", TrayCommand::ToggleConsole),
+                MenuItem::Separator,
+                command_item("Quit", TrayCommand::Quit),
+            ]
+        }
+    }
+
+    fn command_item(label: &str, command: TrayCommand) -> MenuItem<FileOrganizerTray> {
+        StandardItem {
+            label: label.to_string(),
+            activate: Box::new(move |tray: &mut FileOrganizerTray| (tray.callback)(command)),
+            ..Default::default()
+        }
+        .into()
+    }
+
+    /// A 16x16 folder glyph in the ARGB32 the StatusNotifierItem spec expects.
+    fn fallback_icon() -> Icon {
+        const SIZE: i32 = 16;
+        let mut data = Vec::with_capacity((SIZE * SIZE * 4) as usize);
+
+        for y in 0..SIZE {
+            for x in 0..SIZE {
+                // A folder body with a tab along its top left edge.
+                let in_body = (2..=13).contains(&y) && (1..=14).contains(&x);
+                let in_tab = y == 1 && (1..=6).contains(&x);
+                let opaque = in_body || in_tab;
+
+                data.extend_from_slice(if opaque { &[0xFF, 0xE0, 0xE0, 0xE0] } else { &[0x00, 0x00, 0x00, 0x00] });
+            }
+        }
+
+        Icon { width: SIZE, height: SIZE, data }
+    }
+
+    /// Keeps the StatusNotifierItem registered for as long as it is held.
+    pub struct Handle {
+        tray: Option<ksni::blocking::Handle<FileOrganizerTray>>,
+    }
+
+    impl Handle {
+        pub fn remove(&self) {
+            if let Some(tray) = self.tray.as_ref() {
+                tray.shutdown();
+            }
+        }
+    }
+
+    pub fn install(callback: TrayCallback) -> Handle {
+        match (FileOrganizerTray { callback }).spawn() {
+            Ok(tray) => {
+                log_bus::log("[tray] status notifier item registered");
+                Handle { tray: Some(tray) }
+            }
+            Err(error) => {
+                // Plain GNOME ships no status notifier host; the application is
+                // perfectly usable without an icon, so this is not fatal.
+                log_bus::log(format!("[tray] no status notifier host available: {error}"));
+                Handle { tray: None }
+            }
+        }
+    }
+}
+
+#[cfg(not(any(windows, target_os = "linux")))]
 mod imp {
     use super::TrayCallback;
     use crate::core::log_bus;
 
-    /// The tray is built on the Win32 shell notification area, so elsewhere the
-    /// application simply runs without an icon.
+    /// Outside Windows and Linux there is no tray backend, so the application
+    /// simply runs without an icon.
     #[derive(Clone)]
     pub struct Handle;
 
