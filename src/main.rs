@@ -1,3 +1,4 @@
+mod core;
 mod icons;
 mod title_bar;
 mod list;
