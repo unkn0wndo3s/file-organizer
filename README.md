@@ -96,11 +96,20 @@ just without an icon.
 
 ## Installing
 
+Prebuilt binaries are attached to the
+[latest release](https://github.com/unkn0wndo3s/file-organizer/releases/latest) —
+that link always resolves to whatever is newest, so it stays correct across
+every future version without needing to be updated here.
+
 ### Arch and Arch based
 
 ```bash
 cd packaging/arch && makepkg -si
 ```
+
+`makepkg` downloads the tagged source, builds it, runs the test suite and
+installs the result with `pacman`. Bump `pkgver` in `PKGBUILD` to package a
+release newer than the one currently pinned there.
 
 ### Debian and Ubuntu based
 
@@ -112,6 +121,9 @@ sudo apt install build-essential dpkg-dev pkg-config libx11-dev \
 sudo apt install ./target/debian/file-organizer_*.deb
 ```
 
+The version packaged is read from `Cargo.toml`, so this always builds
+whatever is checked out — no version to edit by hand.
+
 ### Any other distribution
 
 ```bash
@@ -120,7 +132,9 @@ sudo ./packaging/linux/install.sh      # or --user for ~/.local
 
 ### Windows
 
-Run `FileOrganizer-Setup.exe`, or build it as described below.
+Download `FileOrganizer-Setup.exe` from the
+[latest release](https://github.com/unkn0wndo3s/file-organizer/releases/latest)
+and run it, or build it yourself as described below.
 
 ### Starting with the session
 
@@ -144,7 +158,9 @@ a value under the current user's `Run` key, on Linux an XDG autostart entry.
 
 ---
 
-## Build and Run
+## Building the Binaries
+
+Every command below has been run against this exact source tree.
 
 ```bash
 # Run in development
@@ -154,22 +170,65 @@ cargo run
 cargo check
 cargo clippy
 cargo test
+```
 
-# Release build
+### Linux binary
+
+```bash
 cargo build --release
 ```
 
-The binary is written to `target/release/file-organizer`
-(`file-organizer.exe` on Windows).
+**Output:** `target/release/file-organizer`
 
-### Windows Installer
+### Arch package
 
-```batch
-rem 1. Build the release binary
+```bash
+cd packaging/arch
+makepkg -f    # build only
+makepkg -si   # build, and install with pacman
+```
+
+**Output:** `packaging/arch/file-organizer-<version>-1-x86_64.pkg.tar.zst`
+
+### Debian / Ubuntu package
+
+```bash
+sudo apt install build-essential dpkg-dev pkg-config libx11-dev \
+     libxkbcommon-dev libwayland-dev libfontconfig1-dev libfreetype6-dev \
+     libvulkan-dev libasound2-dev
+./packaging/debian/build-deb.sh
+```
+
+**Output:** `target/debian/file-organizer_<version>_<arch>.deb`
+
+### Generic Linux install
+
+```bash
+sudo ./packaging/linux/install.sh            # system wide, into /usr/local
+./packaging/linux/install.sh --user          # current user only, into ~/.local
+./packaging/linux/install.sh --uninstall     # remove either of the above
+```
+
+Builds the release binary itself; no separate `cargo build` needed first.
+
+### Windows binary
+
+Build **on Windows**, with the MSVC toolchain — cross-compiling gpui's
+graphics stack from Linux is not a supported path:
+
+```powershell
 cargo build --release --target x86_64-pc-windows-msvc
+```
 
-rem 2. Package it
-"C:\Program Files (x86)\Inno Setup 6\ISCC.exe" ".\installer.iss"
+**Output:** `target\x86_64-pc-windows-msvc\release\file-organizer.exe`
+
+### Windows installer
+
+After the step above, with [Inno Setup 6](https://jrsoftware.org/isinfo.php)
+installed:
+
+```powershell
+"C:\Program Files (x86)\Inno Setup 6\ISCC.exe" .\installer.iss
 ```
 
 **Output:** `FileOrganizer-Setup.exe`
