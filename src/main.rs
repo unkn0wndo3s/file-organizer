@@ -16,6 +16,7 @@ use gpui::*;
 use gpui_component::{input::*, Icon, Root, StyledExt};
 use notify::{Event, RecursiveMode, Watcher};
 use std::sync::Arc;
+use std::time::Duration;
 
 /// Requests raised by the tray and the hotkey, which run on their own threads
 /// and cannot touch the gpui context directly.
@@ -361,6 +362,31 @@ fn start_hotkey(commands: Sender<AppCommand>) -> HotkeyService {
     hotkey
 }
 
+/// The displays a Wayland client learns about are discovered asynchronously,
+/// over the registry the compositor sends after the connection is made, so
+/// `cx.displays()` can still be empty in the first moments after startup.
+/// Polls briefly rather than risking a 0x0 window on whichever run loses
+/// that race.
+async fn wait_for_a_display(cx: &mut AsyncApp) -> anyhow::Result<Bounds<Pixels>> {
+    const ATTEMPTS: u32 = 50;
+    const INTERVAL: Duration = Duration::from_millis(20);
+
+    for attempt in 0..ATTEMPTS {
+        let bounds = cx.update(|cx| cx.displays().first().map(|display| display.bounds()))?;
+        if let Some(bounds) = bounds {
+            return Ok(bounds);
+        }
+
+        if attempt == 0 {
+            log_bus::log("[window] waiting for the compositor to report a display...");
+        }
+        cx.background_executor().timer(INTERVAL).await;
+    }
+
+    log_bus::log("[window:warning] no display reported after 1s, falling back to a default size");
+    Ok(Bounds::new(point(px(0.0), px(0.0)), size(px(1536.0), px(864.0))))
+}
+
 /// Bridges the log bus into the console view, which lives on the foreground thread.
 fn capture_log_lines() -> Receiver<String> {
     let (tx, rx) = unbounded::<String>();
@@ -435,29 +461,42 @@ fn main() {
         gpui_component::init(cx);
 
         cx.spawn(async move |cx| {
-            let screen_bounds = cx.update(|cx| {
-                cx.displays().first().map(|display| display.bounds()).unwrap_or(Bounds::default())
-            })?;
+            let screen_bounds = wait_for_a_display(cx).await?;
 
-            let width = screen_bounds.size.width * 0.6;
-            let height = screen_bounds.size.height * 0.6;
-            let x = screen_bounds.origin.x + (screen_bounds.size.width - width) / 2.0;
-            let y = screen_bounds.origin.y + (screen_bounds.size.height - height) / 2.0;
+            // The restore size a maximized window would return to if
+            // un-maximized; kept at the previous default so that action still
+            // lands on a sensible size rather than the screen's minimum.
+            let restore_width = screen_bounds.size.width * 0.6;
+            let restore_height = screen_bounds.size.height * 0.6;
+            let restore_x = screen_bounds.origin.x + (screen_bounds.size.width - restore_width) / 2.0;
+            let restore_y = screen_bounds.origin.y + (screen_bounds.size.height - restore_height) / 2.0;
+            let restore_bounds = Bounds::new(point(restore_x, restore_y), size(restore_width, restore_height));
 
+            // Requesting Maximized together with window_min_size at creation
+            // makes gpui's Wayland backend send the compositor an invalid
+            // (zero size) wp_viewport destination during the maximize
+            // handshake — reproduced against KWin: neither one alone
+            // triggers it, only the combination, and only at creation time.
+            // Opening windowed and maximizing a moment later, after the
+            // window has completed its first configure, avoids the race.
             let options = WindowOptions {
-                window_bounds: Some(WindowBounds::Windowed(Bounds::new(point(x, y), size(width, height)))),
+                window_bounds: Some(WindowBounds::Windowed(restore_bounds)),
+                window_min_size: Some(size(screen_bounds.size.width * 0.3, screen_bounds.size.height * 0.2)),
                 is_resizable: true,
                 titlebar: None,
                 ..Default::default()
             };
 
-            cx.open_window(options, |window, cx| {
+            let window_handle = cx.open_window(options, |window, cx| {
                 let title_bar = cx.new(|_cx| TitleBar::new());
                 let list = cx.new(List::new);
                 let log_console = cx.new(|_cx| LogConsole::new());
                 let view = cx.new(|cx| Main::new(title_bar, list, log_console, log_lines, window, cx));
                 cx.new(|cx| Root::new(view, window, cx))
             })?;
+
+            cx.background_executor().timer(Duration::from_millis(50)).await;
+            let _ = window_handle.update(cx, |_root, window, _cx| window.zoom_window());
 
             Ok::<_, anyhow::Error>(())
         })
