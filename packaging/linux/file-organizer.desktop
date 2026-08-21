@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=File Organizer
+GenericName=File Organizer
+Comment=Keep the home folder tidy and search it instantly
+Exec=file-organizer
+Icon=file-organizer
+Terminal=false
+Categories=Utility;FileTools;
+Keywords=files;search;organize;sort;downloads;
+StartupNotify=false

@@ -49,13 +49,16 @@ Source: "fileorganizer.ico"; DestDir: "{app}"
 Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExe}"
 ; Desktop (optional)
 Name: "{commondesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; Tasks: desktopicon
-; Startup folder (created only if 'startup' checkbox is checked)
-Name: "{userstartup}\{#AppName}"; Filename: "{app}\{#AppExe}"; WorkingDir: "{app}"; Tasks: startup
 
 [Run]
+; Autostart goes through the application itself, which registers the per user
+; Run key, so the setting stays in step with the tray menu toggle.
+Filename: "{app}\{#AppExe}"; Parameters: "--enable-autostart"; Tasks: startup; \
+    Flags: runhidden waituntilterminated
 ; Launch the app at the end of installation (optional)
 Filename: "{app}\{#AppExe}"; Description: "Launch {#AppName} now"; Flags: nowait postinstall skipifsilent
 
-[UninstallDelete]
-; Cleanup of Startup shortcut if present
-Type: files; Name: "{userstartup}\{#AppName}.lnk"
+[UninstallRun]
+; Leave no Run key entry pointing at a binary that is about to disappear
+Filename: "{app}\{#AppExe}"; Parameters: "--disable-autostart"; RunOnceId: "DisableAutostart"; \
+    Flags: runhidden waituntilterminated

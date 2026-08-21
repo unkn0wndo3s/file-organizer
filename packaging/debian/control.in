@@ -1,0 +1,17 @@
+Package: file-organizer
+Version: @VERSION@
+Section: utils
+Priority: optional
+Architecture: @ARCH@
+Maintainer: Unkn0wndo3s <louis1.potevin1@gmail.com>
+Installed-Size: @INSTALLED_SIZE@
+Depends: libc6, libgcc-s1, libx11-6, libxkbcommon0, libwayland-client0, libfontconfig1, libfreetype6, libvulkan1
+Recommends: libayatana-appindicator3-1
+Homepage: https://github.com/unkn0wndo3s/file-organizer
+Description: Keeps the home folder tidy and searchable
+ File Organizer sweeps every new download into a folder matching its type,
+ then indexes the folders it manages so they can be searched instantly from
+ a global Ctrl+Space shortcut.
+ .
+ It runs from the notification area, watches the managed folders so the index
+ follows what happens on disk, and can start with the user's session.

@@ -1,0 +1,7 @@
+#!/bin/sh
+set -e
+
+# The autostart entry lives in each user's own config directory, so it is left
+# for them to remove with `file-organizer --disable-autostart`.
+
+exit 0

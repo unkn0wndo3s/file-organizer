@@ -1,0 +1,42 @@
+# Maintainer: Unkn0wndo3s <louis1.potevin1@gmail.com>
+pkgname=file-organizer
+pkgver=2.0.0
+pkgrel=1
+pkgdesc="Keeps the home folder tidy and searchable, with a global Ctrl+Space shortcut"
+arch=('x86_64')
+url="https://github.com/unkn0wndo3s/file-organizer"
+license=('custom:CC-BY-NC-SA-4.0')
+depends=('gcc-libs' 'libx11' 'libxkbcommon' 'wayland' 'vulkan-icd-loader' 'fontconfig' 'freetype2')
+makedepends=('cargo' 'git')
+optdepends=('libappindicator-gtk3: tray icon on desktops without a native status notifier host')
+source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('SKIP')
+options=('!lto')
+
+prepare() {
+    cd "$pkgname-$pkgver"
+    export RUSTUP_TOOLCHAIN=stable
+    cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
+}
+
+build() {
+    cd "$pkgname-$pkgver"
+    export RUSTUP_TOOLCHAIN=stable
+    export CARGO_TARGET_DIR=target
+    cargo build --frozen --release --all-features
+}
+
+check() {
+    cd "$pkgname-$pkgver"
+    export RUSTUP_TOOLCHAIN=stable
+    cargo test --frozen --release
+}
+
+package() {
+    cd "$pkgname-$pkgver"
+    install -Dm755 "target/release/$pkgname" "$pkgdir/usr/bin/$pkgname"
+    install -Dm644 "packaging/linux/$pkgname.desktop" "$pkgdir/usr/share/applications/$pkgname.desktop"
+    install -Dm644 "packaging/linux/$pkgname.svg" "$pkgdir/usr/share/icons/hicolor/scalable/apps/$pkgname.svg"
+    install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+    install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
+}
