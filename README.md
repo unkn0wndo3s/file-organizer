@@ -258,6 +258,8 @@ makepkg -si   # build, and install with pacman
 
 ### Debian / Ubuntu package
 
+On Debian or Ubuntu:
+
 ```bash
 sudo apt install build-essential dpkg-dev pkg-config libx11-dev \
      libxkbcommon-dev libwayland-dev libfontconfig1-dev libfreetype6-dev \
@@ -266,6 +268,25 @@ sudo apt install build-essential dpkg-dev pkg-config libx11-dev \
 ```
 
 **Output:** `target/debian/file-organizer_<version>_<arch>.deb`
+
+#### Building it from Arch instead
+
+Unlike the Windows binary (see below), the `.deb` cross-builds from Arch just
+fine — verified for real, not just in theory. It packages the same ELF binary
+the plain [Linux binary](#linux-binary) build produces, so nothing about it is
+actually Debian-specific except the archive format itself. `apt`'s dev
+packages above aren't needed either: `dpkg`'s official Arch package already
+provides `dpkg-deb`, and the graphics/X11 libraries the build links against
+are the same ones `packaging/arch/PKGBUILD` already depends on.
+
+```bash
+sudo pacman -S --needed dpkg
+./packaging/debian/build-deb.sh
+```
+
+**Output:** the same `target/debian/file-organizer_<version>_<arch>.deb`,
+installable with `sudo apt install ./file-organizer_*.deb` on the target
+machine.
 
 ### Generic Linux install
 
