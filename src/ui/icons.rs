@@ -1,44 +1,57 @@
 use anyhow::Result;
-use gpui::*;
-use gpui_component::*; // Needed for IconNamed and SharedString
-use std::fs;
-use std::path::PathBuf;
+use gpui::{AssetSource, SharedString};
+use gpui_component::IconNamed;
+use std::borrow::Cow;
 
-/// Asset source that looks in the project's /assets folder
-pub struct LocalAssets {
-    pub base: PathBuf,
-}
+/// The SVG icons, embedded so a packaged build carries them with it instead of
+/// looking for an assets folder next to the executable.
+const ASSETS: &[(&str, &[u8])] = &[
+    ("icons/close.svg", include_bytes!("../../assets/icons/close.svg")),
+    ("icons/file-archive.svg", include_bytes!("../../assets/icons/file-archive.svg")),
+    ("icons/file-image.svg", include_bytes!("../../assets/icons/file-image.svg")),
+    ("icons/file-music.svg", include_bytes!("../../assets/icons/file-music.svg")),
+    ("icons/file-video.svg", include_bytes!("../../assets/icons/file-video.svg")),
+    ("icons/file.svg", include_bytes!("../../assets/icons/file.svg")),
+    ("icons/folder.svg", include_bytes!("../../assets/icons/folder.svg")),
+    ("icons/minus.svg", include_bytes!("../../assets/icons/minus.svg")),
+    ("icons/search.svg", include_bytes!("../../assets/icons/search.svg")),
+    ("icons/settings.svg", include_bytes!("../../assets/icons/settings.svg")),
+];
+
+/// Serves the embedded assets to gpui.
+pub struct LocalAssets;
 
 impl LocalAssets {
-    /// Create a constructor to handle the path logic
     pub fn new() -> Self {
-        Self {
-            base: PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets"),
-        }
+        Self
     }
 }
 
-// Fixed: Removed 'let assets = LocalAssets::new();' from here. 
-// This should be called inside your main() function instead.
+impl Default for LocalAssets {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl AssetSource for LocalAssets {
-    fn load(&self, path: &str) -> Result<Option<std::borrow::Cow<'static, [u8]>>> {
-        fs::read(self.base.join(path))
-            .map(|data| Some(std::borrow::Cow::Owned(data)))
-            .map_err(|err| err.into())
+    fn load(&self, path: &str) -> Result<Option<Cow<'static, [u8]>>> {
+        Ok(ASSETS
+            .iter()
+            .find(|(asset_path, _)| *asset_path == path)
+            .map(|(_, bytes)| Cow::Borrowed(*bytes)))
     }
 
     fn list(&self, path: &str) -> Result<Vec<SharedString>> {
-        let Ok(entries) = fs::read_dir(self.base.join(path)) else {
-            return Ok(vec![]);
-        };
+        let prefix = path.trim_end_matches('/');
 
-        let paths = entries
-            .filter_map(|entry| {
-                entry.ok()?.file_name().into_string().ok().map(SharedString::from)
+        Ok(ASSETS
+            .iter()
+            .filter_map(|(asset_path, _)| {
+                asset_path
+                    .strip_prefix(prefix)
+                    .map(|relative| SharedString::from(relative.trim_start_matches('/').to_string()))
             })
-            .collect();
-        Ok(paths)
+            .collect())
     }
 }
 
@@ -70,5 +83,40 @@ impl IconNamed for IconName {
             IconName::Search => "icons/search.svg".into(),
             IconName::Settings => "icons/settings.svg".into(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_icon_name_resolves_to_an_embedded_asset() {
+        let icons = [
+            IconName::Close,
+            IconName::Minimize,
+            IconName::File,
+            IconName::Folder,
+            IconName::Image,
+            IconName::Video,
+            IconName::Music,
+            IconName::Archive,
+            IconName::Search,
+            IconName::Settings,
+        ];
+
+        let assets = LocalAssets::new();
+        for icon in icons {
+            let path = icon.path();
+            let loaded = assets.load(&path).unwrap();
+            assert!(loaded.is_some(), "{path} is not embedded");
+        }
+    }
+
+    #[test]
+    fn listing_a_folder_returns_its_file_names() {
+        let listed = LocalAssets::new().list("icons").unwrap();
+        assert!(listed.contains(&SharedString::from("folder.svg")));
+        assert_eq!(listed.len(), ASSETS.len());
     }
 }
