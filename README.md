@@ -1,7 +1,46 @@
 # File Organizer
 
-A desktop application built with **JavaFX** that organizes files and folders.  
-It includes multiple modules: `core`, `ui`, `windows`, and `app`.
+A desktop application built with **Rust** and **gpui** that keeps your home
+folder tidy: it sweeps Downloads into typed buckets and gives you a global
+`Ctrl+Space` search over everything it manages.
+
+---
+
+## Features
+
+- **Automatic sorting** — on startup, every top level entry in `Downloads` is
+  moved into the bucket matching its extension, and folders land in `Folders`.
+- **Instant search** — a searchable index of the managed folders, with a type
+  icon and the containing folder for each entry.
+- **Open and reveal** — click an entry to open it, right click to reveal it in
+  the system file manager.
+- **Live index** — the managed folders are watched, so the list follows what
+  happens on disk.
+- **Global hotkey** — `Ctrl+Space` toggles the window, and steps aside
+  automatically while a text editor or a game has the focus (Windows).
+- **Tray icon** — show, hide, open the console or quit from the notification
+  area (Windows).
+- **Quick Access** — the managed folders are pinned to Explorer's Quick Access
+  list (Windows).
+- **Console** — a built in log panel showing everything the application does.
+
+---
+
+## Managed Folders
+
+All paths are relative to the user's home directory:
+
+| Folder        | Contents                                              |
+| ------------- | ----------------------------------------------------- |
+| `Documents`   | txt, pdf, doc(x), rtf, odt, xls(x), csv, ppt(x), md, … |
+| `Images`      | jpg, png, gif, bmp, tif, webp, heic, svg, ico, …       |
+| `Musics`      | mp3, wav, flac, aac, ogg, m4a, wma, opus               |
+| `Videos`      | mp4, mkv, avi, mov, wmv, webm, m4v                     |
+| `Executables` | exe, msi, iso, jar, bat, cmd, sh                       |
+| `Archives`    | zip, rar, 7z, tar, gz, bz2, xz                         |
+| `Folders`     | every directory swept out of `Downloads`               |
+
+`Desktop` and `Downloads` are indexed and watched but never used as a target.
 
 ---
 
@@ -9,90 +48,54 @@ It includes multiple modules: `core`, `ui`, `windows`, and `app`.
 
 ```
 file-organizer/
-├── core/ # Core logic (file scanning, moving, initialization)
-├── ui/ # JavaFX UI components
-├── windows/ # Windows-specific utilities (Quick Access, hotkeys, etc.)
-├── app/ # Main JavaFX application entry point
-└── pom.xml # Parent Maven build file
+├── src/
+│   ├── core/      # Scanning, classification, moving and logging
+│   ├── platform/  # Hotkey, tray, Quick Access and shell integration
+│   ├── ui/        # gpui views: title bar, list, console, icons
+│   └── main.rs    # Application entry point and orchestration
+├── assets/icons/  # SVG icons, embedded into the binary at build time
+├── installer.iss  # Inno Setup script for the Windows installer
+└── Cargo.toml
 ```
 
 ---
 
-## Dependencies
+## Requirements
 
-The project uses the following key dependencies:
+- **Rust** 1.85 or newer (the crate uses the 2024 edition)
+- **Inno Setup 6** — only to build the Windows installer
 
-- **Java 17** (JDK 17 or compatible with JavaFX 20+)
-- **JavaFX 20.0.2** (base, controls, graphics, fxml)
-- **Maven** (build & dependency management)
-- **maven-shade-plugin** (to package a fat JAR)
-- **javafx-maven-plugin** (for `mvn javafx:run`)
-- **Inno Setup** (optional, to build a Windows installer)
-
-### JavaFX Modules Used
-
-- `javafx.base`
-- `javafx.graphics`
-- `javafx.controls`
-- `javafx.fxml`
-
-You need the **JavaFX SDK** (`.../lib` JARs) for development and the **JavaFX JMODs** (`.../jmods`) for packaging with `jpackage`.
+Windows is the primary target. The application builds and runs on Linux and
+macOS, where the file organization, the search and the console work, while the
+global hotkey, the tray icon and Quick Access pinning stay inert.
 
 ---
 
-## Quick Start
+## Build and Run
 
-### Prerequisites
+```bash
+# Run in development
+cargo run
 
-- **Java 17** (JDK 17)
-- **Maven 3.6+**
-- **JavaFX 20.0.2** (SDK + JMODs)
-- **Inno Setup 6** (for Windows installer)
+# Check, lint and test
+cargo check
+cargo clippy
+cargo test
 
-### Environment Setup
-
-1. Set `JAVA_HOME` to your JDK 17 installation
-2. Set `FXJMODS` to your JavaFX JMODs directory:
-   ```batch
-   set FXJMODS=C:\javafx-jmods-20.0.2
-   ```
-
----
-
-## Build Commands
-
-### 1. Compile and Test (Development)
-
-```batch
-# Clean and compile all modules
-mvn -pl app -am -DskipTests clean package
-
-# Run tests with hotkey debugging
-.\test_hotkey.bat
+# Release build
+cargo build --release
 ```
 
-### 2. Build Executable JAR
+The binary is written to `target/release/file-organizer`
+(`file-organizer.exe` on Windows).
+
+### Windows Installer
 
 ```batch
-mvn -pl app -am -DskipTests clean package
-```
+rem 1. Build the release binary
+cargo build --release --target x86_64-pc-windows-msvc
 
-**Output:** `app/target/file-organizer.jar`
-
-### 3. Build Standalone Executable
-
-```batch
-# Use the provided compiler script
-.\compiler.bat
-```
-
-**Output:** `dist/File Organizer/File Organizer.exe`
-
-### 4. Build Windows Installer
-
-```batch
-# After running compiler.bat, the installer is automatically created
-# Or manually:
+rem 2. Package it
 "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" ".\installer.iss"
 ```
 
@@ -100,93 +103,23 @@ mvn -pl app -am -DskipTests clean package
 
 ---
 
-## Testing Commands
+## Usage
 
-### 1. Test Hotkey Functionality
-
-```batch
-# Test in development mode
-.\test_hotkey.bat
-
-# Test compiled executable
-.\test_compiled.bat
-```
-
-### 2. Manual Testing
-
-```batch
-# Development mode
-cd app
-mvn javafx:run
-
-# Compiled executable
-"dist\File Organizer\File Organizer.exe"
-```
-
-**Test the hotkey:** Press `Ctrl+Space` to toggle the search window
-
----
-
-## Development Workflow
-
-### Quick Development Cycle
-
-```batch
-# 1. Compile
-mvn clean install -DskipTests && mvn -pl app javafx:run
-
-# 2. Test hotkey
-.\test_hotkey.bat
-
-# 3. Build executable
-.\compiler.bat
-
-# 4. Test executable
-.\test_compiled.bat
-```
-
-### Debug Mode
-
-```batch
-# Run with debug output
-mvn -pl app javafx:run 2>&1 | findstr /i "hotkey"
-```
+Press `Ctrl+Space` to toggle the window, type to filter, click an entry to open
+it and right click to reveal it. The gear button in the title bar, and the
+`Console` entry of the tray menu, open the log panel.
 
 ---
 
 ## Troubleshooting
 
-### Hotkey Not Working in Compiled Version
+**The hotkey does not respond.** Another application may already own
+`Ctrl+Space`. The console reports the registration result on startup. The
+shortcut is also released on purpose while a text editor or a game has the
+focus, so it stays out of the way.
 
-If hotkeys don't work in the compiled executable, ensure:
+**Nothing is pinned to Quick Access.** Pinning drives Explorer through
+PowerShell; check the `[pin]` lines in the console for the failing folder.
 
-1. **JavaFX JMODs are properly configured:**
-
-   ```batch
-   set FXJMODS=C:\javafx-jmods-20.0.2
-   ```
-
-2. **All required modules are included:**
-
-   - `java.logging` (required for JNA)
-   - `java.desktop` (required for AWT)
-   - `javafx.*` modules
-
-3. **Check the logs:**
-   ```batch
-   type compiled_output.log
-   ```
-
-### Common Issues
-
-- **"JavaFX runtime components are missing"** → Check JavaFX SDK installation
-- **"NoClassDefFoundError: java/util/logging/Logger"** → Missing `java.logging` module
-- **Hotkey registration fails** → Check Windows permissions and conflicting applications
-
-# Notes
-
-- Use `mvn javafx:run` during development (no need to mess with `--module-path`).
-
-- Use `jpackage` **+ JMODs** to create distributable executables.
-
-- Installer customization is handled in `installer.iss`.
+**Files are not moved.** Only known extensions are sorted; anything else is
+left untouched and reported in the console as `ignored (unknown ext)`.
