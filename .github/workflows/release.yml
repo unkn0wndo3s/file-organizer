@@ -97,9 +97,45 @@ jobs:
             target/x86_64-pc-windows-msvc/release/file-organizer.exe
             FileOrganizer-Setup.exe
 
+  arch:
+    name: Arch package
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+
+      - name: Install build dependencies
+        run: |
+          pacman -Syu --noconfirm --needed \
+            rust cargo git libx11 libxkbcommon libxkbcommon-x11 wayland \
+            vulkan-icd-loader fontconfig freetype2
+
+      - name: Build the package
+        run: |
+          # makepkg refuses to run as root, which is what this container
+          # starts as, so it builds under an unprivileged user instead.
+          useradd -m builder
+          chown -R builder:builder .
+
+          # PKGBUILD pins pkgver by hand for reproducibility, as Arch
+          # packaging expects; keep it from silently drifting away from the
+          # version actually being released, whether or not it was bumped
+          # in the same commit as the tag.
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          sed -i "s/^pkgver=.*/pkgver=${version}/" packaging/arch/PKGBUILD
+
+          su builder -c 'cd packaging/arch && makepkg -f --noconfirm'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: arch-artifacts
+          path: packaging/arch/*.pkg.tar.zst
+
   release:
     name: Publish the release
-    needs: [linux, windows]
+    needs: [linux, windows, arch]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
