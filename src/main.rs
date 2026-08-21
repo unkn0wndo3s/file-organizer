@@ -191,7 +191,21 @@ impl Main {
                         let downloads = home.join(folders::DOWNLOADS);
                         log_bus::log(format!("[scan] start {}", downloads.display()));
 
-                        let moved = mover::sweep(&home, &downloads);
+                        // Downloads is an inbox: a loose file is filed by type,
+                        // and a loose folder is clutter to be tidied into
+                        // Folders just the same.
+                        let mut moved = mover::sweep(&home, &downloads);
+
+                        // Every other managed folder is already organized, so
+                        // only a misplaced *file* is relocated there — a
+                        // subfolder is left exactly where the user put it.
+                        for folder in folders::MANAGED {
+                            if folder == folders::DOWNLOADS {
+                                continue;
+                            }
+                            moved += mover::resort(&home, &home.join(folder));
+                        }
+
                         log_bus::log(format!("[scan] moved={moved}"));
 
                         // The sweep created the buckets and filled them, so the

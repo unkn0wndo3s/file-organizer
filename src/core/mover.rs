@@ -99,9 +99,30 @@ pub fn move_path(home: &Path, path: &Path) -> Outcome {
     }
 }
 
-/// Moves every top level entry of `source_dir` into its bucket, returning how
-/// many were moved.
+/// Moves every top level file and folder of `source_dir` into its bucket,
+/// returning how many were moved.
+///
+/// Meant for an inbox style folder such as Downloads, where a loose folder
+/// is clutter to be tidied away into `Folders` just as much as a loose file
+/// is clutter to be filed by type.
 pub fn sweep(home: &Path, source_dir: &Path) -> usize {
+    sweep_impl(home, source_dir, true)
+}
+
+/// Moves every top level *file* of `source_dir` into the bucket its
+/// extension belongs to, leaving folders untouched, and returning how many
+/// files were moved.
+///
+/// Meant for a folder that is itself a bucket, or Desktop: a subfolder there
+/// is something the user organized on purpose, not an inbox entry, so unlike
+/// [`sweep`] it is never relocated. Files already misplaced by hand — a
+/// spreadsheet in Pictures, a photo in Documents — are relocated to their own
+/// bucket exactly as [`move_path`] would from Downloads.
+pub fn resort(home: &Path, source_dir: &Path) -> usize {
+    sweep_impl(home, source_dir, false)
+}
+
+fn sweep_impl(home: &Path, source_dir: &Path, include_directories: bool) -> usize {
     let Ok(entries) = fs::read_dir(source_dir) else {
         log_bus::log(format!("[move] cannot read {}", source_dir.display()));
         return 0;
@@ -109,7 +130,13 @@ pub fn sweep(home: &Path, source_dir: &Path) -> usize {
 
     let mut moved = 0;
     for entry in entries.flatten() {
-        let outcome = move_path(home, &entry.path());
+        let path = entry.path();
+
+        if !include_directories && path.is_dir() {
+            continue;
+        }
+
+        let outcome = move_path(home, &path);
         log_bus::log(outcome.describe());
         if outcome.moved() {
             moved += 1;
@@ -351,6 +378,35 @@ mod tests {
         assert!(home.path().join(folders::PICTURES).join("a.png").exists());
         assert!(home.path().join(folders::MUSIC).join("b.mp3").exists());
         assert!(home.downloads().join("c.qwerty").exists());
+    }
+
+    #[test]
+    fn resort_relocates_misplaced_files_between_bucket_folders() {
+        let home = TempHome::new("resort");
+        let pictures = home.path().join(folders::PICTURES);
+        fs::create_dir_all(&pictures).unwrap();
+
+        // A file that ended up in the wrong bucket, and one that belongs
+        // exactly where it already is.
+        fs::write(pictures.join("invoice.pdf"), b"misplaced").unwrap();
+        fs::write(pictures.join("photo.png"), b"correctly placed").unwrap();
+
+        assert_eq!(resort(home.path(), &pictures), 1);
+        assert!(home.path().join(folders::DOCUMENTS).join("invoice.pdf").exists());
+        assert!(pictures.join("photo.png").exists());
+    }
+
+    #[test]
+    fn resort_never_touches_a_folder_even_when_its_name_matches_a_bucket() {
+        let home = TempHome::new("resort-dirs");
+        let pictures = home.path().join(folders::PICTURES);
+        let subfolder = pictures.join("Vacation 2024");
+        fs::create_dir_all(&subfolder).unwrap();
+        fs::write(subfolder.join("beach.png"), b"nested, left alone").unwrap();
+
+        assert_eq!(resort(home.path(), &pictures), 0);
+        assert!(subfolder.is_dir());
+        assert!(subfolder.join("beach.png").exists());
     }
 
     #[test]
