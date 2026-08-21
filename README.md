@@ -4,6 +4,24 @@ A desktop application built with **Rust** and **gpui** that keeps your home
 folder tidy: it sweeps Downloads into typed buckets and gives you a global
 `Ctrl+Space` search over everything it manages.
 
+Runs on Windows and Linux (Arch and Debian/Ubuntu based distributions, or any
+other distribution through a generic install path).
+
+## Contents
+
+- [Features](#features)
+- [Managed Folders](#managed-folders)
+- [Project Structure](#project-structure)
+- [Platform Support](#platform-support)
+- [Installing](#installing)
+- [Requirements](#requirements)
+- [Building the Binaries](#building-the-binaries)
+- [Usage](#usage)
+- [Troubleshooting](#troubleshooting)
+- [Contributing](#contributing)
+- [License](#license)
+- [Acknowledgments](#acknowledgments)
+
 ---
 
 ## Features
@@ -58,18 +76,66 @@ same set is created, swept into, indexed and watched.
 ```
 file-organizer/
 ├── src/
-│   ├── core/      # Scanning, classification, moving and logging
-│   ├── platform/  # Hotkey, tray, Quick Access and shell integration
+│   ├── core/      # Platform independent logic: no gpui, no OS APIs
+│   ├── platform/  # OS integration: hotkey, tray, focus, autostart, shell
 │   ├── ui/        # gpui views: title bar, list, console, icons
-│   └── main.rs    # Application entry point and orchestration
+│   └── main.rs    # Wires core, platform and ui together
 ├── packaging/
 │   ├── linux/     # .desktop entry, icon and a generic install script
 │   ├── arch/      # PKGBUILD
 │   └── debian/    # .deb build script and control file
 ├── assets/icons/  # SVG icons, embedded into the binary at build time
+├── .github/workflows/  # CI: tests every push, builds every release asset
 ├── installer.iss  # Inno Setup script for the Windows installer
 └── Cargo.toml
 ```
+
+### `src/core` — what happens, independent of the OS or the UI
+
+No `gpui`, no `windows-sys`, no `x11rb`; everything here is plain Rust that
+`cargo test` can exercise without a display. This is where to look first for
+sorting rules or move behavior.
+
+| Module | Responsibility |
+| --- | --- |
+| `folders.rs` | The single source of truth: which folders are managed, and which file extension goes into which. Creates them (`ensure_all`), and is read by both the mover and the index — see [Managed Folders](#managed-folders). |
+| `scanner.rs` | Lists the visible top level entries of the managed folders. |
+| `mover.rs` | Moves an entry into its bucket. Every move is failsafe: see [Features](#features). |
+| `fs_util.rs` | Small path helpers: extension extraction, hidden file detection, unique name generation. |
+| `log_bus.rs` | A process wide broadcast channel: any part of the app calls `log_bus::log(...)`, and every registered listener (stdout, the in-app console) receives it. |
+| `model.rs` | The plain data types (`FsEntry`) passed between the modules above. |
+
+### `src/platform` — the same job, four different ways
+
+Every file here has a `#[cfg(windows)]` branch, a `#[cfg(target_os = "linux")]`
+branch, and usually a fallback for anything else, all behind one shared
+interface so `main.rs` never branches on OS itself.
+
+| Module | Windows | Linux |
+| --- | --- | --- |
+| `hotkey.rs` | `RegisterHotKey` / a Win32 message loop | `XGrabKey` on the root window (X11; XWayland only under Wayland) |
+| `tray.rs` | A Win32 tray icon (`Shell_NotifyIcon`) | A StatusNotifierItem over D-Bus (`ksni`) |
+| `focus_monitor.rs` | Polls `GetForegroundWindow` | Polls `_NET_ACTIVE_WINDOW` / `WM_CLASS` over X11 |
+| `autostart.rs` | A value under the user's registry `Run` key | An XDG autostart `.desktop` entry |
+| `quick_access.rs` | Pins folders to Explorer via PowerShell | n/a |
+| `shell.rs` | Open/reveal a path with the OS file manager | Open/reveal a path with the OS file manager |
+
+### `src/ui` — what you see
+
+Built on [`gpui`](https://github.com/zed-industries/zed/tree/main/crates/gpui)
+(Zed's UI framework) and
+[`gpui-component`](https://github.com/longbridge/gpui-component). `list.rs` is
+the searchable index view — it renders through `uniform_list`, so only the
+rows on screen are ever built, regardless of how many files are managed.
+
+### How `main.rs` wires it together
+
+The hotkey, the tray and the file watcher each run on their own thread and
+none of them may touch a `gpui` entity directly — only the thread that owns
+the window can. `main.rs` bridges this with `async-channel`: each background
+thread sends onto a channel, and one `cx.spawn` per channel awaits it and
+applies the update on the UI thread. Nothing polls on a timer; the app is
+fully idle until an event, a log line or a command actually arrives.
 
 ---
 
@@ -272,3 +338,99 @@ PowerShell; check the `[pin]` lines in the console for the failing folder.
 
 **Files are not moved.** Only known extensions are sorted; anything else is
 left untouched and reported in the console as `ignored (unknown ext)`.
+
+---
+
+## Contributing
+
+Forking and modifying the source is welcome under the terms of the
+[license](#license) below.
+
+1. Fork the repository and clone your fork.
+2. Create a branch for your change.
+3. Make the change. `src/core` is plain Rust and the easiest place to start —
+   see [Project Structure](#project-structure) for what lives where.
+4. Before opening a pull request:
+
+   ```bash
+   cargo fmt
+   cargo clippy --all-targets   # this repository builds with zero warnings
+   cargo test                   # unit tests only, nothing touches your real home folder
+   ```
+
+   Tests that exercise the file mover run against a temporary directory under
+   `std::env::temp_dir()`, never against `dirs::home_dir()`, so running the
+   suite is always safe.
+5. Open a pull request describing what changed and why.
+
+### Commit messages
+
+This repository uses [Conventional Commits](https://www.conventionalcommits.org/):
+`type(scope): summary`, where `type` is one of `feat`, `fix`, `docs`, `chore`,
+`perf`, `ci` or `refactor`, and `scope` is the module touched (`core`,
+`platform`, `ui`, `packaging`...). Look at `git log` for examples. Keep the
+summary in the imperative mood ("add", not "added"), and explain the *why* in
+the body when it is not obvious from the diff.
+
+### Code style
+
+- Default to no comments. Add one only when the *why* is not obvious from the
+  code itself — a platform quirk, a workaround, an invariant a reader could
+  otherwise break by accident.
+- No unstable Rust features; the crate targets stable, edition 2024 (Rust
+  1.85+).
+- New behavior in `src/core` should come with a unit test in the same file,
+  in a `#[cfg(test)] mod tests` block at the bottom — that is the existing
+  pattern throughout the module.
+- `src/platform` code should keep the Windows, Linux and fallback
+  implementations behind the same function signatures, as `hotkey.rs` and
+  `tray.rs` already do, so `main.rs` never has to know which platform it is
+  running on.
+
+### Reporting a bug or requesting a feature
+
+Open an [issue](https://github.com/unkn0wndo3s/file-organizer/issues). For a
+bug, include your OS, desktop environment (on Linux), and the relevant lines
+from the in-app console — the gear icon in the title bar, or **Console** in
+the tray menu, opens it.
+
+---
+
+## License
+
+[Attribution-NonCommercial-ShareAlike 4.0 International](LICENSE) (CC BY-NC-SA 4.0).
+
+In plain terms, and without this being legal advice:
+
+- **You can** read, run, study, modify and share this source, and your own
+  modified versions of it, for free.
+- **You can't** sell it, or use it — modified or not — as part of a paid
+  product or service, without the author's separate permission.
+- **If you share a modified version**, it has to carry the same license and
+  credit the original author.
+
+This is a stricter license than most software on GitHub uses, and it is why
+the project cannot be submitted to the official Arch repositories, the AUR,
+or Debian main, all of which require a license without a NonCommercial
+clause — see `packaging/arch/README.md` for the detail. The packaging in this
+repository is meant for building and installing the project yourself, not for
+redistribution through those channels.
+
+---
+
+## Acknowledgments
+
+Built with [Rust](https://www.rust-lang.org/) and
+[gpui](https://github.com/zed-industries/zed/tree/main/crates/gpui), the UI
+framework behind [Zed](https://zed.dev/), together with
+[gpui-component](https://github.com/longbridge/gpui-component) for its input,
+icon and list widgets.
+
+Platform integration relies on
+[windows-sys](https://github.com/microsoft/windows-rs) on Windows, and on
+[x11rb](https://github.com/psychon/x11rb) and
+[ksni](https://github.com/iovxw/ksni) on Linux, plus
+[notify](https://github.com/notify-rs/notify) for watching the managed
+folders on both.
+
+**Developer:** Unkn0wndo3s
