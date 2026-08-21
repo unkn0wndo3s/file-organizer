@@ -4,7 +4,7 @@
 
 ```bash
 sudo apt install build-essential dpkg-dev curl pkg-config \
-     libx11-dev libxkbcommon-dev libwayland-dev \
+     libx11-dev libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev \
      libfontconfig1-dev libfreetype6-dev libvulkan-dev libasound2-dev
 
 # Rust, if it is not installed already

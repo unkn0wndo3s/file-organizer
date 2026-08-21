@@ -181,8 +181,8 @@ release newer than the one currently pinned there.
 
 ```bash
 sudo apt install build-essential dpkg-dev pkg-config libx11-dev \
-     libxkbcommon-dev libwayland-dev libfontconfig1-dev libfreetype6-dev \
-     libvulkan-dev libasound2-dev
+     libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev libfontconfig1-dev \
+     libfreetype6-dev libvulkan-dev libasound2-dev
 ./packaging/debian/build-deb.sh
 sudo apt install ./target/debian/file-organizer_*.deb
 ```
@@ -262,8 +262,8 @@ On Debian or Ubuntu:
 
 ```bash
 sudo apt install build-essential dpkg-dev pkg-config libx11-dev \
-     libxkbcommon-dev libwayland-dev libfontconfig1-dev libfreetype6-dev \
-     libvulkan-dev libasound2-dev
+     libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev libfontconfig1-dev \
+     libfreetype6-dev libvulkan-dev libasound2-dev
 ./packaging/debian/build-deb.sh
 ```
 

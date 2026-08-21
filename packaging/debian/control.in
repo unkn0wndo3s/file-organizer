@@ -5,7 +5,7 @@ Priority: optional
 Architecture: @ARCH@
 Maintainer: Unkn0wndo3s <louis1.potevin1@gmail.com>
 Installed-Size: @INSTALLED_SIZE@
-Depends: libc6, libgcc-s1, libx11-6, libxkbcommon0, libwayland-client0, libfontconfig1, libfreetype6, libvulkan1
+Depends: libc6, libgcc-s1, libx11-6, libxkbcommon0, libxkbcommon-x11-0, libwayland-client0, libfontconfig1, libfreetype6, libvulkan1
 Recommends: libayatana-appindicator3-1
 Homepage: https://github.com/unkn0wndo3s/file-organizer
 Description: Keeps the home folder tidy and searchable
