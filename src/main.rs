@@ -4,6 +4,7 @@ mod ui;
 
 use crate::core::init::ensure_base_and_folders;
 use crate::core::{home_dir, log_bus, mover};
+use crate::platform::autostart;
 use crate::platform::hotkey::HotkeyService;
 use crate::platform::quick_access;
 use crate::platform::tray::{Tray, TrayCommand};
@@ -29,6 +30,7 @@ enum AppCommand {
     HideWindow,
     ToggleWindow,
     ToggleConsole,
+    ToggleAutostart,
     Quit,
 }
 
@@ -203,6 +205,9 @@ impl Main {
             AppCommand::ToggleConsole => {
                 self.log_console.update(cx, |console, cx| console.toggle(cx));
             }
+            AppCommand::ToggleAutostart => {
+                autostart::toggle();
+            }
             AppCommand::Quit => {
                 log_bus::log("[app] quit requested");
                 cx.quit();
@@ -311,6 +316,7 @@ fn install_tray(commands: Sender<AppCommand>) -> Tray {
             TrayCommand::Hide => AppCommand::HideWindow,
             TrayCommand::Toggle => AppCommand::ToggleWindow,
             TrayCommand::ToggleConsole => AppCommand::ToggleConsole,
+            TrayCommand::ToggleAutostart => AppCommand::ToggleAutostart,
             TrayCommand::Quit => AppCommand::Quit,
         };
         let _ = commands.send(command);
@@ -339,7 +345,57 @@ fn capture_log_lines() -> Receiver<String> {
     rx
 }
 
+/// Handles the flags the installers and the packaging scripts use, and reports
+/// whether the graphical application should still start.
+fn run_cli(arguments: &[String]) -> Option<i32> {
+    let Some(flag) = arguments.first() else { return None };
+
+    let result = match flag.as_str() {
+        "--enable-autostart" => autostart::enable().map(|()| "autostart enabled".to_string()),
+        "--disable-autostart" => autostart::disable().map(|()| "autostart disabled".to_string()),
+        "--autostart-status" => {
+            Ok(format!("autostart is {}", if autostart::is_enabled() { "enabled" } else { "disabled" }))
+        }
+        "--version" => Ok(format!("file-organizer {}", env!("CARGO_PKG_VERSION"))),
+        "--help" | "-h" => {
+            println!(
+                "file-organizer {}\n\n\
+                 Usage: file-organizer [OPTION]\n\n\
+                 With no option, the graphical application starts.\n\n\
+                 Options:\n\
+                 \x20 --enable-autostart   start with the user's session\n\
+                 \x20 --disable-autostart  stop starting with the session\n\
+                 \x20 --autostart-status   report the current setting\n\
+                 \x20 --version            print the version\n\
+                 \x20 -h, --help           print this help",
+                env!("CARGO_PKG_VERSION")
+            );
+            return Some(0);
+        }
+        unknown => {
+            eprintln!("file-organizer: unknown option {unknown}, try --help");
+            return Some(2);
+        }
+    };
+
+    match result {
+        Ok(message) => {
+            println!("{message}");
+            Some(0)
+        }
+        Err(error) => {
+            eprintln!("file-organizer: {error}");
+            Some(1)
+        }
+    }
+}
+
 fn main() {
+    let arguments: Vec<String> = std::env::args().skip(1).collect();
+    if let Some(code) = run_cli(&arguments) {
+        std::process::exit(code);
+    }
+
     let log_lines = capture_log_lines();
     let app = Application::new().with_assets(LocalAssets::new());
 

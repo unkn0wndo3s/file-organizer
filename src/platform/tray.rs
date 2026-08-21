@@ -22,6 +22,8 @@ pub enum TrayCommand {
     Toggle,
     /// Show or hide the log console.
     ToggleConsole,
+    /// Start, or stop starting, with the user's session.
+    ToggleAutostart,
     /// Quit the application.
     Quit,
 }
@@ -57,6 +59,7 @@ impl Drop for Tray {
 mod imp {
     use super::{TrayCallback, TrayCommand, TRAY_TOOLTIP};
     use crate::core::log_bus;
+    use crate::platform::autostart;
     use std::cell::RefCell;
     use std::sync::atomic::{AtomicU32, Ordering};
     use std::sync::Arc;
@@ -71,8 +74,8 @@ mod imp {
         DispatchMessageW, GetCursorPos, GetMessageW, LoadIconW, LoadImageW, PostQuitMessage,
         PostThreadMessageW, RegisterClassW, SetForegroundWindow, TrackPopupMenu, TranslateMessage,
         IDI_APPLICATION, IMAGE_ICON, LR_DEFAULTSIZE, LR_LOADFROMFILE, MF_SEPARATOR, MF_STRING, MSG,
-        TPM_BOTTOMALIGN, TPM_RIGHTALIGN, WM_APP, WM_COMMAND, WM_DESTROY, WM_LBUTTONUP,
-        WM_RBUTTONUP, WNDCLASSW, WS_OVERLAPPED,
+        MF_CHECKED, MF_UNCHECKED, TPM_BOTTOMALIGN, TPM_RIGHTALIGN, WM_APP, WM_COMMAND, WM_DESTROY,
+        WM_LBUTTONUP, WM_RBUTTONUP, WNDCLASSW, WS_OVERLAPPED,
     };
 
     /// Message the shell posts to the helper window for every tray interaction.
@@ -86,7 +89,8 @@ mod imp {
     const MENU_OPEN: usize = 1;
     const MENU_HIDE: usize = 2;
     const MENU_CONSOLE: usize = 3;
-    const MENU_QUIT: usize = 4;
+    const MENU_AUTOSTART: usize = 4;
+    const MENU_QUIT: usize = 5;
 
     thread_local! {
         /// The tray callback, reachable from the window procedure, which Win32
@@ -251,10 +255,16 @@ mod imp {
             return;
         }
 
+        // The checkmark is resolved when the menu opens, so it always shows
+        // the setting as it stands right now.
+        let autostart_flags = MF_STRING | if autostart::is_enabled() { MF_CHECKED } else { MF_UNCHECKED };
+
         unsafe {
             AppendMenuW(menu, MF_STRING, MENU_OPEN, wide("Open (Ctrl+Space)").as_ptr());
             AppendMenuW(menu, MF_STRING, MENU_HIDE, wide("Hide").as_ptr());
             AppendMenuW(menu, MF_STRING, MENU_CONSOLE, wide("Console").as_ptr());
+            AppendMenuW(menu, MF_SEPARATOR, 0, std::ptr::null());
+            AppendMenuW(menu, autostart_flags, MENU_AUTOSTART, wide("Start with Windows").as_ptr());
             AppendMenuW(menu, MF_SEPARATOR, 0, std::ptr::null());
             AppendMenuW(menu, MF_STRING, MENU_QUIT, wide("Quit").as_ptr());
 
@@ -300,6 +310,7 @@ mod imp {
                     MENU_OPEN => dispatch(TrayCommand::Open),
                     MENU_HIDE => dispatch(TrayCommand::Hide),
                     MENU_CONSOLE => dispatch(TrayCommand::ToggleConsole),
+                    MENU_AUTOSTART => dispatch(TrayCommand::ToggleAutostart),
                     MENU_QUIT => dispatch(TrayCommand::Quit),
                     _ => {}
                 }
@@ -323,8 +334,9 @@ mod imp {
 mod imp {
     use super::{TrayCallback, TrayCommand, TRAY_TOOLTIP};
     use crate::core::log_bus;
+    use crate::platform::autostart;
     use ksni::blocking::TrayMethods;
-    use ksni::menu::StandardItem;
+    use ksni::menu::{CheckmarkItem, StandardItem};
     use ksni::{Icon, MenuItem};
 
     /// The freedesktop icon name desktops look up in the current theme, and the
@@ -364,6 +376,16 @@ mod imp {
                 command_item("Open (Ctrl+Space)", TrayCommand::Open),
                 command_item("Hide", TrayCommand::Hide),
                 command_item("Console", TrayCommand::ToggleConsole),
+                MenuItem::Separator,
+                // The checkmark is resolved when the menu is built, so it
+                // always shows the setting as it stands right now.
+                CheckmarkItem {
+                    label: "Start with the session".to_string(),
+                    checked: autostart::is_enabled(),
+                    activate: Box::new(|tray: &mut Self| (tray.callback)(TrayCommand::ToggleAutostart)),
+                    ..Default::default()
+                }
+                .into(),
                 MenuItem::Separator,
                 command_item("Quit", TrayCommand::Quit),
             ]
