@@ -3,6 +3,9 @@
 //! Quick Access is only reachable through the shell automation object, so every
 //! operation goes through a short PowerShell script.
 
+// Most of this surface is only reachable on Windows.
+#![allow(dead_code)]
+
 use std::path::{Path, PathBuf};
 
 /// Folder ID of the Quick Access shell namespace.

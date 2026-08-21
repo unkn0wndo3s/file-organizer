@@ -1,6 +1,9 @@
 //! Watches the foreground window so the global hotkey can step aside while the
 //! user is typing in an editor or playing a game.
 
+// Most of this surface is only reachable on Windows.
+#![allow(dead_code)]
+
 use crate::core::log_bus;
 use std::sync::Arc;
 

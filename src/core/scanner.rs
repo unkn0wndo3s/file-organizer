@@ -1,3 +1,7 @@
+// The recursive walk only feeds the planning API, which the entry point does
+// not use yet; the top level walk backs the searchable index.
+#![allow(dead_code)]
+
 use crate::core::fs_util::{extension_lower, is_hidden, is_hidden_or_system};
 use crate::core::model::{FileRecord, FsEntry};
 use std::fs;

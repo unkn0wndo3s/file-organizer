@@ -4,6 +4,9 @@
 //! the message pump and every later (un)registration all happen on one
 //! dedicated thread. Other threads drive it by posting messages to it.
 
+// Most of this surface is only reachable on Windows.
+#![allow(dead_code)]
+
 use crate::core::log_bus;
 use crate::platform::focus_monitor::FocusMonitor;
 use std::sync::Arc;

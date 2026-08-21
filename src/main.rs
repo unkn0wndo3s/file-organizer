@@ -1,105 +1,260 @@
 mod core;
 mod platform;
-mod icons;
-mod title_bar;
-mod list;
+mod ui;
 
+use crate::core::init::ensure_base_and_folders;
+use crate::core::scanner::FileScanner;
+use crate::core::{home_dir, log_bus, mover};
+use crate::platform::hotkey::HotkeyService;
+use crate::platform::quick_access;
+use crate::platform::tray::{Tray, TrayCommand};
+use crate::ui::icons::{IconName, LocalAssets};
+use crate::ui::list::List;
+use crate::ui::log_console::LogConsole;
+use crate::ui::title_bar::{TitleBar, TitleBarEvent};
+use crossbeam_channel::{unbounded, Receiver, Sender};
 use gpui::*;
-use gpui::{AsyncApp, Styled, WeakEntity, Entity, AsyncWindowContext};
-use gpui_component::{input::*, *};
-use title_bar::TitleBar;
-use icons::LocalAssets;
-use list::List;
-use crossbeam_channel::{unbounded, Sender, Receiver};
-use notify::{Watcher, RecursiveMode, Event};
-use std::path::PathBuf;
+use gpui_component::{input::*, Icon, Root, StyledExt};
+use notify::{Event, RecursiveMode, Watcher};
+use std::sync::Arc;
 use std::time::Duration;
 
+/// How often the foreground task drains the background channels.
+const POLL_INTERVAL: Duration = Duration::from_millis(200);
+
+/// Requests raised by the tray and the hotkey, which run on their own threads
+/// and cannot touch the gpui context directly.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum AppCommand {
+    ShowWindow,
+    HideWindow,
+    ToggleWindow,
+    ToggleConsole,
+    Quit,
+}
+
 pub struct Main {
+    /// Needed to drive the window from the tray and hotkey threads, which only
+    /// reach the application context.
+    window_handle: AnyWindowHandle,
     title_bar: Entity<TitleBar>,
     list: Entity<List>,
+    log_console: Entity<LogConsole>,
     input_state: Entity<InputState>,
-    // Keep watcher alive as long as the app is running
-    watcher: Option<notify::RecommendedWatcher>,
+    /// The watcher stops reporting as soon as it is dropped, so it is kept
+    /// alive for as long as the application runs.
+    _watcher: Option<notify::RecommendedWatcher>,
+    _tray: Tray,
+    _hotkey: HotkeyService,
 }
 
 impl Main {
-    pub fn new(title_bar: Entity<TitleBar>, list: Entity<List>, window: &mut Window, cx: &mut Context<Self>) -> Self {
+    pub fn new(
+        title_bar: Entity<TitleBar>,
+        list: Entity<List>,
+        log_console: Entity<LogConsole>,
+        log_lines: Receiver<String>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let input_state = cx.new(|cx| {
             let mut state = InputState::new(window, cx);
             state.set_placeholder("Search for file or folder", window, cx);
             state
         });
 
-        let list_handle = list.clone();
-        
-        cx.subscribe(&input_state, move |_this, input_handle, _event: &gpui_component::input::InputEvent, cx| {
-            let query = input_handle.read(cx).value().to_string();
-            list_handle.update(cx, |list_entity, cx| {
-                list_entity.set_search(query, cx);
-            });
-        }).detach();
+        let search_target = list.clone();
+        cx.subscribe(&input_state, move |_this, input, _event: &gpui_component::input::InputEvent, cx| {
+            let query = input.read(cx).value().to_string();
+            search_target.update(cx, |list, cx| list.set_search(query, cx));
+        })
+        .detach();
 
-        // Watcher Setup
-        let (tx, rx): (Sender<Event>, Receiver<Event>) = unbounded();
-        let mut watcher = notify::recommended_watcher(move |res| {
-            if let Ok(event) = res { let _ = tx.send(event); }
-        }).ok();
-        
-        if let Some(w) = watcher.as_mut() {
-            let base_path = std::env::var("USERPROFILE").unwrap_or_else(|_| "C:/".to_string());
-            let main_folders = vec!["Desktop", "Documents", "Images", "Videos", "Music", "Downloads", "Folders", "Executables", "Archives"];
-            for folder in main_folders {
-                let full_path = PathBuf::from(&base_path).join(folder);
-                if full_path.exists() {
-                    let _ = w.watch(&full_path, RecursiveMode::NonRecursive);
-                }
-            }
+        let console_target = log_console.clone();
+        cx.subscribe(&title_bar, move |_this, _title_bar, event: &TitleBarEvent, cx| match event {
+            TitleBarEvent::ToggleConsole => console_target.update(cx, |console, cx| console.toggle(cx)),
+        })
+        .detach();
+
+        let (commands_tx, commands_rx) = unbounded::<AppCommand>();
+        let tray = install_tray(commands_tx.clone());
+        let hotkey = start_hotkey(commands_tx);
+
+        let (watcher, fs_events) = start_watcher();
+        Self::spawn_event_pump(fs_events, log_lines, commands_rx, &list, &log_console, cx);
+        Self::spawn_startup_sweep(&list, cx);
+
+        Self {
+            window_handle: window.window_handle(),
+            title_bar,
+            input_state,
+            list,
+            log_console,
+            _watcher: watcher,
+            _tray: tray,
+            _hotkey: hotkey,
         }
-        
-       let list_weak = list.downgrade();
-        
-        // Grab executor outside to avoid type inference issues
+    }
+
+    /// Drains the background channels on the foreground thread, which is the
+    /// only place the gpui entities may be updated from.
+    fn spawn_event_pump(
+        fs_events: Receiver<Event>,
+        log_lines: Receiver<String>,
+        commands: Receiver<AppCommand>,
+        list: &Entity<List>,
+        log_console: &Entity<LogConsole>,
+        cx: &mut Context<Self>,
+    ) {
+        let list = list.downgrade();
+        let log_console = log_console.downgrade();
         let executor = cx.background_executor().clone();
 
-        cx.spawn(move |_weak_main, cx: &mut AsyncApp| {
-            let cx = cx.clone();
+        cx.spawn(move |this: WeakEntity<Self>, cx: &mut AsyncApp| {
+            let mut cx = cx.clone();
             async move {
                 loop {
-                    executor.timer(Duration::from_millis(200)).await;
-                
-                    let mut events = vec![];
-                    while let Ok(event) = rx.try_recv() {
-                        events.push(event);
-                    }
-                
+                    executor.timer(POLL_INTERVAL).await;
+
+                    let events: Vec<Event> = fs_events.try_iter().collect();
                     if !events.is_empty() {
-                        // Use cx.clone() to pass a handle by value without consuming the original
-                        let _ = list_weak.update(&mut cx.clone(), |list, cx| {
+                        let updated = list.update(&mut cx, |list, cx| {
                             for event in events {
                                 list.handle_fs_event(event, cx);
                             }
                         });
+                        if updated.is_err() {
+                            break;
+                        }
+                    }
+
+                    let lines: Vec<String> = log_lines.try_iter().collect();
+                    if !lines.is_empty() {
+                        let updated = log_console.update(&mut cx, |console, cx| {
+                            for line in lines {
+                                console.append(line, cx);
+                            }
+                        });
+                        if updated.is_err() {
+                            break;
+                        }
+                    }
+
+                    for command in commands.try_iter() {
+                        if this.update(&mut cx, |this, cx| this.handle_command(command, cx)).is_err() {
+                            return;
+                        }
                     }
                 }
             }
-        }).detach();
+        })
+        .detach();
+    }
 
+    /// Sweeps Downloads into the home buckets, then rebuilds the index, exactly
+    /// as the Java application did on startup.
+    fn spawn_startup_sweep(list: &Entity<List>, cx: &mut Context<Self>) {
+        let list = list.downgrade();
+        let executor = cx.background_executor().clone();
 
+        cx.spawn(move |_this: WeakEntity<Self>, cx: &mut AsyncApp| {
+            let mut cx = cx.clone();
+            async move {
+                let moved = executor
+                    .spawn(async move {
+                        let home = home_dir();
 
-        Self { 
-            title_bar,
-            input_state,
-            list,
-            watcher,
+                        match ensure_base_and_folders(&home) {
+                            Ok(folders) => {
+                                for folder in &folders {
+                                    let pinned = quick_access::pin(folder);
+                                    log_bus::log(format!(
+                                        "[pin] {} {}",
+                                        if pinned { "OK" } else { "KO" },
+                                        folder.display()
+                                    ));
+                                }
+                            }
+                            Err(error) => log_bus::log(format!("[init:error] {error}")),
+                        }
+
+                        let downloads = home.join("Downloads");
+                        log_bus::log(format!("[scan] start {}", downloads.display()));
+
+                        let mut moved = 0usize;
+                        FileScanner::new().scan_top_level_stream(&[&downloads], |entry| {
+                            log_bus::log(format!(
+                                "{} {}",
+                                if entry.is_directory { "[folder]" } else { "[file]  " },
+                                entry.path.display()
+                            ));
+                            log_bus::log(mover::move_path(&home, &entry.path));
+                            moved += 1;
+                        });
+                        log_bus::log(format!("[scan] processed={moved}"));
+
+                        moved
+                    })
+                    .await;
+
+                if moved > 0 {
+                    let _ = list.update(&mut cx, |list, cx| list.reload("startup sweep", cx));
+                }
+            }
+        })
+        .detach();
+    }
+
+    fn handle_command(&mut self, command: AppCommand, cx: &mut Context<Self>) {
+        match command {
+            AppCommand::ShowWindow => self.show_window(cx),
+            AppCommand::HideWindow => self.hide_window(cx),
+            AppCommand::ToggleWindow => self.toggle_window(cx),
+            AppCommand::ToggleConsole => {
+                self.log_console.update(cx, |console, cx| console.toggle(cx));
+            }
+            AppCommand::Quit => {
+                log_bus::log("[app] quit requested");
+                cx.quit();
+            }
         }
+    }
+
+    fn show_window(&self, cx: &mut Context<Self>) {
+        self.with_window(cx, |window| {
+            window.activate_window();
+            log_bus::log("[search] window shown");
+        });
+    }
+
+    /// gpui has no dedicated hide, so the window is minimized instead, which is
+    /// what the JavaFX stage did when it stepped out of the way.
+    fn hide_window(&self, cx: &mut Context<Self>) {
+        self.with_window(cx, |window| {
+            window.minimize_window();
+            log_bus::log("[search] window hidden");
+        });
+    }
+
+    fn toggle_window(&self, cx: &mut Context<Self>) {
+        self.with_window(cx, |window| {
+            if window.is_window_active() {
+                log_bus::log("[search] toggle: hiding the window");
+                window.minimize_window();
+            } else {
+                log_bus::log("[search] toggle: showing the window");
+                window.activate_window();
+            }
+        });
+    }
+
+    fn with_window(&self, cx: &mut Context<Self>, action: impl FnOnce(&mut Window)) {
+        let _ = self.window_handle.update(cx, |_, window, _| action(window));
     }
 }
 
 impl Render for Main {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let _view = cx.entity().clone();
-
+    fn render(&mut self, _: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
         div()
             .size_full()
             .v_flex()
@@ -111,51 +266,118 @@ impl Render for Main {
                     .v_flex()
                     .p_4()
                     .gap_4()
-                    .child(Input::new(&self.input_state).w_full())
+                    .child(
+                        Input::new(&self.input_state)
+                            .w_full()
+                            .prefix(Icon::new(IconName::Search).size_4().text_color(rgb(0x777777))),
+                    )
                     .child(
                         div()
                             .w_full()
                             .h_0()
                             .flex_grow()
                             .id("list-scroll-view")
-                            .overflow_y_scroll() 
-                            .child(self.list.clone())
+                            .overflow_y_scroll()
+                            .child(self.list.clone()),
                     )
+                    .child(self.log_console.clone()),
             )
     }
 }
 
+/// Watches the managed folders so the index follows what happens on disk.
+fn start_watcher() -> (Option<notify::RecommendedWatcher>, Receiver<Event>) {
+    let (tx, rx): (Sender<Event>, Receiver<Event>) = unbounded();
+
+    let mut watcher = match notify::recommended_watcher(move |result: notify::Result<Event>| {
+        if let Ok(event) = result {
+            let _ = tx.send(event);
+        }
+    }) {
+        Ok(watcher) => watcher,
+        Err(error) => {
+            log_bus::log(format!("[watch:init:error] {error}"));
+            return (None, rx);
+        }
+    };
+
+    for root in List::indexed_roots() {
+        if !root.is_dir() {
+            continue;
+        }
+        match watcher.watch(&root, RecursiveMode::NonRecursive) {
+            Ok(()) => log_bus::log(format!("[watch] {}", root.display())),
+            Err(error) => log_bus::log(format!("[watch:error] {} : {error}", root.display())),
+        }
+    }
+
+    (Some(watcher), rx)
+}
+
+fn install_tray(commands: Sender<AppCommand>) -> Tray {
+    Tray::install(Arc::new(move |command: TrayCommand| {
+        let command = match command {
+            TrayCommand::Open => AppCommand::ShowWindow,
+            TrayCommand::Hide => AppCommand::HideWindow,
+            TrayCommand::Toggle => AppCommand::ToggleWindow,
+            TrayCommand::ToggleConsole => AppCommand::ToggleConsole,
+            TrayCommand::Quit => AppCommand::Quit,
+        };
+        let _ = commands.send(command);
+    }))
+}
+
+fn start_hotkey(commands: Sender<AppCommand>) -> HotkeyService {
+    let mut hotkey = HotkeyService::new(Arc::new(move || {
+        let _ = commands.send(AppCommand::ToggleWindow);
+    }))
+    .on_registration(Arc::new(|result| match result {
+        Ok(name) => log_bus::log(format!("[hotkey] {name} registered")),
+        Err(reason) => log_bus::log(format!("[hotkey:error] registration failed: {reason}")),
+    }));
+
+    hotkey.start();
+    hotkey
+}
+
+/// Bridges the log bus into the console view, which lives on the foreground thread.
+fn capture_log_lines() -> Receiver<String> {
+    let (tx, rx) = unbounded::<String>();
+    log_bus::add_listener(move |line| {
+        let _ = tx.send(line.to_string());
+    });
+    rx
+}
+
 fn main() {
-    let assets = LocalAssets::new();
-    let app = Application::new().with_assets(assets);
+    let log_lines = capture_log_lines();
+    let app = Application::new().with_assets(LocalAssets::new());
 
     app.run(move |cx| {
         gpui_component::init(cx);
 
         cx.spawn(async move |cx| {
             let screen_bounds = cx.update(|cx| {
-                cx.displays()
-                    .first()
-                    .map(|d| d.bounds())
-                    .unwrap_or(Bounds::default())
+                cx.displays().first().map(|display| display.bounds()).unwrap_or(Bounds::default())
             })?;
 
             let width = screen_bounds.size.width * 0.6;
-            let height = screen_bounds.size.height * 0.6; // Increased height slightly
+            let height = screen_bounds.size.height * 0.6;
             let x = screen_bounds.origin.x + (screen_bounds.size.width - width) / 2.0;
             let y = screen_bounds.origin.y + (screen_bounds.size.height - height) / 2.0;
 
             let options = WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(Bounds::new(point(x, y), size(width, height)))),
-                is_resizable: true, 
+                is_resizable: true,
                 titlebar: None,
                 ..Default::default()
             };
 
             cx.open_window(options, |window, cx| {
                 let title_bar = cx.new(|_cx| TitleBar::new());
-                let list = cx.new(|cx| List::new(cx));
-                let view = cx.new(|cx| Main::new(title_bar, list, window, cx));
+                let list = cx.new(List::new);
+                let log_console = cx.new(|_cx| LogConsole::new());
+                let view = cx.new(|cx| Main::new(title_bar, list, log_console, log_lines, window, cx));
                 cx.new(|cx| Root::new(view, window, cx))
             })?;
 

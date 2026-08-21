@@ -1,3 +1,8 @@
+// The planning API mirrors the Java classes of the same name. They describe
+// moves without applying them, and like their Java counterparts they are not
+// reached from the entry point yet, which drives the mover directly.
+#![allow(dead_code)]
+
 use crate::core::rules::Category;
 use std::path::PathBuf;
 use std::time::SystemTime;

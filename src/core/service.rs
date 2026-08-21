@@ -1,3 +1,8 @@
+// The planning API mirrors the Java classes of the same name. They describe
+// moves without applying them, and like their Java counterparts they are not
+// reached from the entry point yet, which drives the mover directly.
+#![allow(dead_code)]
+
 use crate::core::model::FilePlan;
 use crate::core::planner::FilePlanner;
 use crate::core::scanner::FileScanner;
@@ -20,7 +25,7 @@ impl PreArrangeService {
         let mut plans: Vec<FilePlan> =
             self.scanner.scan(roots).into_iter().map(|record| self.planner.plan(record)).collect();
 
-        plans.sort_by(|left, right| right.record.last_modified.cmp(&left.record.last_modified));
+        plans.sort_by_key(|plan| std::cmp::Reverse(plan.record.last_modified));
         plans
     }
 

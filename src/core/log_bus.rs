@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use chrono::Local;
 use std::sync::{Mutex, OnceLock};
 
