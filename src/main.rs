@@ -327,6 +327,17 @@ impl Main {
         });
     }
 
+    /// Hides the window from within a callback the window itself is already
+    /// in the middle of dispatching, such as a key event: going through
+    /// `with_window` there reaches for the window a second time while gpui
+    /// is still handling the first, which it silently ignores, so the
+    /// `&mut Window` such a callback is already handed takes its place.
+    fn hide_window_now(shown: &AtomicBool, window: &mut Window) {
+        shown.store(false, Ordering::Relaxed);
+        window.minimize_window();
+        log_bus::log("[search] window hidden");
+    }
+
     fn toggle_window(&self, cx: &mut Context<Self>) {
         if self.shown.load(Ordering::Relaxed) {
             self.hide_window(cx);
@@ -399,9 +410,9 @@ impl Render for Main {
             // capturing it before it reaches the search input (which binds
             // its own escape handler to clear the query) is what makes that
             // reliable.
-            .capture_key_down(move |event, _window, cx| {
+            .capture_key_down(move |event, window, cx| {
                 if event.keystroke.key == "escape" {
-                    this.update(cx, |this, cx| this.hide_window(cx));
+                    Main::hide_window_now(&this.read(cx).shown, window);
                 }
             })
             .child(self.title_bar.clone())
