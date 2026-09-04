@@ -34,8 +34,13 @@ other distribution through a generic install path).
   the system file manager.
 - **Live index** — the managed folders are watched, so the list follows what
   happens on disk.
+- **Starts in the tray** — the window stays out of the way on launch; bring it
+  up with `Ctrl+Space`, the tray icon, or `file-organizer --toggle`.
 - **Global hotkey** — `Ctrl+Space` toggles the window, and steps aside
   automatically while a text editor or a game has the focus.
+- **`--toggle` command** — shows or hides an already running instance from the
+  command line, so the window can be bound to any key in a compositor or
+  window manager the global hotkey cannot reach.
 - **Tray icon** — show, hide, open the console, toggle autostart or quit from
   the notification area.
 - **Autostart** — start with the session, for the current user only.
@@ -146,13 +151,22 @@ fully idle until an event, a log line or a command actually arrives.
 | Sorting and search   | yes     | yes          | yes             |
 | Tray icon            | yes     | yes          | yes             |
 | Autostart            | yes     | yes          | yes             |
-| Global `Ctrl+Space`  | yes     | yes          | XWayland only   |
-| Focus aware muting   | yes     | yes          | XWayland only   |
+| Global `Ctrl+Space`  | yes     | yes          | best effort\*   |
+| `--toggle` command   | yes     | yes          | yes             |
+| Focus aware muting   | yes     | yes          | best effort\*   |
 | Quick Access pinning | yes     | not relevant | not relevant    |
 
-Wayland deliberately keeps global shortcuts away from applications. Bind
-`file-organizer` to a shortcut in your compositor's own settings instead; the
-console says so on startup when it detects a Wayland session.
+\* On Wayland, `file-organizer` runs through XWayland instead of natively
+whenever an X server is reachable (which an XWayland-capable session always
+provides), because gpui's native Wayland windows cannot be restored once
+minimized and Wayland keeps global shortcuts away from native windows
+entirely. Running through XWayland fixes the window round trip and lets
+`Ctrl+Space` reach the application while any XWayland client has focus, but a
+Wayland compositor still only forwards key presses to XWayland while it is
+not itself routing them to a native Wayland window, so the shortcut can still
+be silent depending on what is focused. `file-organizer --toggle` is
+unaffected by any of this — bind it to a key in your compositor's own
+shortcut settings for a toggle that always works.
 
 The Linux tray needs a status notifier host. KDE Plasma has one built in, and
 GNOME needs the AppIndicator extension. Without one the application still runs,
@@ -336,9 +350,11 @@ installed:
 
 ## Usage
 
-Press `Ctrl+Space` to toggle the window, type to filter, click an entry to open
-it and right click to reveal it. The gear button in the title bar, and the
-`Console` entry of the tray menu, open the log panel.
+The application starts in the tray; nothing is shown until it is asked to be.
+Press `Ctrl+Space`, click the tray icon, or run `file-organizer --toggle` to
+bring the window up, type to filter, click an entry to open it and right click
+to reveal it. The gear button in the title bar, and the `Console` entry of the
+tray menu, open the log panel.
 
 ---
 
@@ -348,7 +364,10 @@ it and right click to reveal it. The gear button in the title bar, and the
 `Ctrl+Space`. The console reports the registration result on startup. The
 shortcut is also released on purpose while a text editor or a game has the
 focus, so it stays out of the way. Under Wayland it only reaches XWayland
-windows; bind it in your compositor instead.
+clients, and only while the compositor is not itself routing key presses to a
+native Wayland window; bind `file-organizer --toggle` to a key in your
+compositor's own shortcut settings for a toggle that is not affected by any of
+this — see [Platform Support](#platform-support).
 
 **No tray icon on Linux.** The desktop needs a status notifier host. On GNOME,
 install the AppIndicator extension; elsewhere, install

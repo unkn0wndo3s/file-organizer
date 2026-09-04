@@ -5,6 +5,7 @@ mod ui;
 use crate::core::{folders, home_dir, log_bus, mover};
 use crate::platform::autostart;
 use crate::platform::hotkey::HotkeyService;
+use crate::platform::ipc::IpcServer;
 use crate::platform::quick_access;
 use crate::platform::tray::{Tray, TrayCommand};
 use crate::ui::icons::{IconName, LocalAssets};
@@ -43,6 +44,7 @@ pub struct Main {
     _watcher: Option<notify::RecommendedWatcher>,
     _tray: Tray,
     _hotkey: HotkeyService,
+    _ipc: IpcServer,
 }
 
 impl Main {
@@ -75,7 +77,8 @@ impl Main {
 
         let (commands_tx, commands_rx) = unbounded::<AppCommand>();
         let tray = install_tray(commands_tx.clone());
-        let hotkey = start_hotkey(commands_tx);
+        let hotkey = start_hotkey(commands_tx.clone());
+        let ipc = start_ipc_server(commands_tx);
 
         let (watcher, fs_events) = start_watcher();
         Self::spawn_event_pump(fs_events, log_lines, commands_rx, &list, &log_console, cx);
@@ -90,6 +93,7 @@ impl Main {
             _watcher: watcher,
             _tray: tray,
             _hotkey: hotkey,
+            _ipc: ipc,
         }
     }
 
@@ -349,6 +353,12 @@ fn install_tray(commands: Sender<AppCommand>) -> Tray {
     }))
 }
 
+fn start_ipc_server(commands: Sender<AppCommand>) -> IpcServer {
+    IpcServer::start(move || {
+        let _ = commands.try_send(AppCommand::ToggleWindow);
+    })
+}
+
 fn start_hotkey(commands: Sender<AppCommand>) -> HotkeyService {
     let mut hotkey = HotkeyService::new(Arc::new(move || {
         let _ = commands.try_send(AppCommand::ToggleWindow);
@@ -401,12 +411,17 @@ fn capture_log_lines() -> Receiver<String> {
 fn run_cli(arguments: &[String]) -> Option<i32> {
     let flag = arguments.first()?;
 
-    let result = match flag.as_str() {
-        "--enable-autostart" => autostart::enable().map(|()| "autostart enabled".to_string()),
-        "--disable-autostart" => autostart::disable().map(|()| "autostart disabled".to_string()),
+    let result: Result<String, String> = match flag.as_str() {
+        "--enable-autostart" => {
+            autostart::enable().map(|()| "autostart enabled".to_string()).map_err(|error| error.to_string())
+        }
+        "--disable-autostart" => {
+            autostart::disable().map(|()| "autostart disabled".to_string()).map_err(|error| error.to_string())
+        }
         "--autostart-status" => {
             Ok(format!("autostart is {}", if autostart::is_enabled() { "enabled" } else { "disabled" }))
         }
+        "--toggle" => platform::ipc::send_toggle().map(|()| "toggled".to_string()),
         "--version" => Ok(format!("file-organizer {}", env!("CARGO_PKG_VERSION"))),
         "--help" | "-h" => {
             println!(
@@ -417,6 +432,10 @@ fn run_cli(arguments: &[String]) -> Option<i32> {
                  \x20 --enable-autostart   start with the user's session\n\
                  \x20 --disable-autostart  stop starting with the session\n\
                  \x20 --autostart-status   report the current setting\n\
+                 \x20 --toggle             show or hide a running instance's window\n\
+                 \x20                      (bind this to a key in your compositor or\n\
+                 \x20                      window manager where the global Ctrl+Space\n\
+                 \x20                      shortcut cannot reach the application)\n\
                  \x20 --version            print the version\n\
                  \x20 -h, --help           print this help",
                 env!("CARGO_PKG_VERSION")
@@ -441,11 +460,33 @@ fn run_cli(arguments: &[String]) -> Option<i32> {
     }
 }
 
+/// Makes gpui pick its X11 backend over its native Wayland one, when both are
+/// available, by hiding `WAYLAND_DISPLAY` from it.
+///
+/// Wayland's `xdg-shell` has a request to minimize a window but none to
+/// restore it, so a minimized native Wayland window can only be brought back
+/// by the user, never by the application; and Wayland deliberately keeps
+/// global shortcuts away from applications entirely, which is why `Ctrl+Space`
+/// only reaches XWayland windows (see `platform::hotkey`). Both the tray's
+/// hide/show and the global shortcut need a real window to attach to, so
+/// running through XWayland, which supports both, is preferred over running
+/// natively whenever an X server is actually reachable.
+fn prefer_xwayland() {
+    if std::env::var_os("DISPLAY").is_some() && std::env::var_os("WAYLAND_DISPLAY").is_some() {
+        log_bus::log("[window] an X server is available, preferring XWayland over native Wayland");
+        unsafe {
+            std::env::remove_var("WAYLAND_DISPLAY");
+        }
+    }
+}
+
 fn main() {
     let arguments: Vec<String> = std::env::args().skip(1).collect();
     if let Some(code) = run_cli(&arguments) {
         std::process::exit(code);
     }
+
+    prefer_xwayland();
 
     let log_lines = capture_log_lines();
 
@@ -496,7 +537,13 @@ fn main() {
             })?;
 
             cx.background_executor().timer(Duration::from_millis(50)).await;
-            let _ = window_handle.update(cx, |_root, window, _cx| window.zoom_window());
+            // Sized and shaped like a restored window would be, then minimized
+            // right away: the app lives in the tray until Ctrl+Space or the
+            // tray icon brings it up, it should not appear on launch.
+            let _ = window_handle.update(cx, |_root, window, _cx| {
+                window.zoom_window();
+                window.minimize_window();
+            });
 
             Ok::<_, anyhow::Error>(())
         })
