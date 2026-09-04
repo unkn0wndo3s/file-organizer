@@ -50,15 +50,12 @@ impl LogConsole {
 
 impl Render for LogConsole {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        if !self.visible {
-            return div();
-        }
-
         let this = cx.entity();
 
+        // Mounted by `Main` only in place of the search bar and the result
+        // list, so it always has the whole content area to itself.
         div()
-            .w_full()
-            .h_64()
+            .size_full()
             .v_flex()
             .bg(rgb(0x141414))
             .rounded_md()

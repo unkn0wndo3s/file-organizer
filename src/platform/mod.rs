@@ -5,3 +5,4 @@ pub mod ipc;
 pub mod quick_access;
 pub mod shell;
 pub mod tray;
+pub mod window_geometry;

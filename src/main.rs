@@ -27,9 +27,6 @@ const WIDTH_RATIO: f32 = 2.0 / 5.0;
 /// Everything above the result rows: the title bar, the search input, and
 /// their paddings and gaps.
 const CHROME_HEIGHT: f32 = 148.0;
-/// Extra height the window grows by while the console panel is open: its own
-/// height (`log_console`'s `h_64`) plus the gap before it.
-const CONSOLE_HEIGHT: f32 = 256.0 + 16.0;
 
 /// Requests raised by the tray and the hotkey, which run on their own threads
 /// and cannot touch the gpui context directly.
@@ -53,6 +50,10 @@ pub struct Main {
     /// would report it the same as a minimized one, making a toggle re-show
     /// it instead of hiding it.
     shown: Arc<AtomicBool>,
+    /// Focused instead of the search input while the console is showing, and
+    /// as a fallback if focusing the input ever fails, so escape always has
+    /// something in the dispatch path to reach it through.
+    focus_handle: FocusHandle,
     title_bar: Entity<TitleBar>,
     list: Entity<List>,
     log_console: Entity<LogConsole>,
@@ -105,6 +106,7 @@ impl Main {
         Self {
             window_handle: window.window_handle(),
             shown,
+            focus_handle: cx.focus_handle(),
             title_bar,
             input_state,
             list,
@@ -267,9 +269,51 @@ impl Main {
 
     fn show_window(&self, cx: &mut Context<Self>) {
         self.shown.store(true, Ordering::Relaxed);
-        self.with_window(cx, |window| {
+        self.move_to_focused_display(cx);
+
+        // Console mode has no input to type into, so the root container
+        // takes focus instead; either way something always does, which is
+        // what lets escape reach it (see `Render for Main`).
+        let console_visible = self.log_console.read(cx).is_visible();
+        let input_state = self.input_state.clone();
+        let focus_handle = self.focus_handle.clone();
+
+        self.with_window(cx, move |window, cx| {
             window.activate_window();
+            if console_visible {
+                window.focus(&focus_handle);
+            } else {
+                input_state.update(cx, |input, cx| input.focus(window, cx));
+            }
             log_bus::log("[search] window shown");
+        });
+    }
+
+    /// Resizes and recenters the window on whichever display currently has
+    /// the pointer, so it reappears in front of the user at the right size
+    /// rather than wherever - and however large - it happened to be created.
+    /// gpui has no public API to move a window after creation, only to
+    /// resize it, and its own display list merges every monitor into one
+    /// bounds on at least some multi-monitor X11 setups, which is why both
+    /// go through the platform natively instead; if that fails for any
+    /// reason, the window just stays where it already was.
+    fn move_to_focused_display(&self, cx: &mut Context<Self>) {
+        let Some((display_x, display_y, display_width, display_height)) =
+            platform::window_geometry::focused_display_bounds()
+        else {
+            return;
+        };
+
+        let target = bounds_for_display(display_x, display_y, display_width, display_height);
+
+        self.with_window(cx, move |window, _cx| {
+            window.resize(target.size);
+
+            let x = f32::from(target.origin.x) as i32;
+            let y = f32::from(target.origin.y) as i32;
+            if let Err(reason) = platform::window_geometry::move_own_window(x, y) {
+                log_bus::log(format!("[window:warning] unable to move to the focused display: {reason}"));
+            }
         });
     }
 
@@ -277,7 +321,7 @@ impl Main {
     /// what the JavaFX stage did when it stepped out of the way.
     fn hide_window(&self, cx: &mut Context<Self>) {
         self.shown.store(false, Ordering::Relaxed);
-        self.with_window(cx, |window| {
+        self.with_window(cx, |window, _cx| {
             window.minimize_window();
             log_bus::log("[search] window hidden");
         });
@@ -291,59 +335,77 @@ impl Main {
         }
     }
 
-    /// The window is sized to fit the result list exactly, with no room to
-    /// spare, so the console panel needs the window itself to grow into
-    /// rather than sharing that space, or its content would spill past the
-    /// bottom edge.
+    /// The console replaces the search bar and the result list rather than
+    /// sharing the window with them, so opening it never has to fight the
+    /// fixed window size for room.
     fn toggle_console(&self, cx: &mut Context<Self>) {
-        let visible = self.log_console.update(cx, |console, cx| {
-            console.toggle(cx);
-            console.is_visible()
-        });
-
-        self.with_window(cx, |window| {
-            let mut bounds = window.bounds();
-            bounds.size.height =
-                if visible { bounds.size.height + px(CONSOLE_HEIGHT) } else { bounds.size.height - px(CONSOLE_HEIGHT) };
-            window.resize(bounds.size);
-        });
+        self.log_console.update(cx, |console, cx| console.toggle(cx));
     }
 
-    fn with_window(&self, cx: &mut Context<Self>, action: impl FnOnce(&mut Window)) {
-        let _ = self.window_handle.update(cx, |_, window, _| action(window));
+    fn with_window(&self, cx: &mut Context<Self>, action: impl FnOnce(&mut Window, &mut App) + 'static) {
+        let _ = self.window_handle.update(cx, |_, window, cx| action(window, cx));
     }
 }
 
+/// The window's bounds for the display at `(x, y, width, height)`: fixed at
+/// `WIDTH_RATIO` of its width and tall enough for exactly `VISIBLE_RESULTS`
+/// rows, centered on it.
+fn bounds_for_display(x: i32, y: i32, width: i32, height: i32) -> Bounds<Pixels> {
+    let window_width = px(width as f32 * WIDTH_RATIO);
+    let window_height = crate::ui::list::ROW_HEIGHT * VISIBLE_RESULTS + px(CHROME_HEIGHT);
+    let window_x = px(x as f32) + (px(width as f32) - window_width) / 2.0;
+    let window_y = px(y as f32) + (px(height as f32) - window_height) / 2.0;
+    Bounds::new(point(window_x, window_y), size(window_width, window_height))
+}
+
 impl Render for Main {
-    fn render(&mut self, _: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let this = cx.entity();
+        let console_visible = self.log_console.read(cx).is_visible();
+
+        let content = div().flex_grow().h_0().v_flex().p_4().gap_4();
+        let content = if console_visible {
+            content.child(self.log_console.clone())
+        } else {
+            content
+                .child(
+                    Input::new(&self.input_state)
+                        .w_full()
+                        .prefix(Icon::new(IconName::Search).size_4().text_color(rgb(0x777777))),
+                )
+                .child(
+                    div()
+                        .w_full()
+                        .h_0()
+                        .flex_grow()
+                        .id("list-scroll-view")
+                        .overflow_y_scroll()
+                        .child(self.list.clone()),
+                )
+        };
+
         div()
             .size_full()
             .v_flex()
             .rounded_lg()
             .bg(rgba(0x1e1e1ee6))
+            // Always focused, or holding focus itself when nothing else
+            // claims it, so escape always has a dispatch path to reach this
+            // through - a key listener has none while no descendant is
+            // focused, which minimizing and reactivating the window can
+            // otherwise leave true.
+            .track_focus(&self.focus_handle)
+            // Escape hides the window regardless of which child has focus;
+            // capturing it before it reaches the search input (which binds
+            // its own escape handler to clear the query) is what makes that
+            // reliable.
+            .capture_key_down(move |event, _window, cx| {
+                if event.keystroke.key == "escape" {
+                    this.update(cx, |this, cx| this.hide_window(cx));
+                }
+            })
             .child(self.title_bar.clone())
-            .child(
-                div()
-                    .flex_grow()
-                    .v_flex()
-                    .p_4()
-                    .gap_4()
-                    .child(
-                        Input::new(&self.input_state)
-                            .w_full()
-                            .prefix(Icon::new(IconName::Search).size_4().text_color(rgb(0x777777))),
-                    )
-                    .child(
-                        div()
-                            .w_full()
-                            .h_0()
-                            .flex_grow()
-                            .id("list-scroll-view")
-                            .overflow_y_scroll()
-                            .child(self.list.clone()),
-                    )
-                    .child(self.log_console.clone()),
-            )
+            .child(content)
     }
 }
 
@@ -539,16 +601,25 @@ fn main() {
         gpui_component::init(cx);
 
         cx.spawn(async move |cx| {
-            let screen_bounds = wait_for_a_display(cx).await?;
-
             // A launcher-style popup, not a full window: fixed size, wide
             // enough for a comfortable line of text, tall enough for exactly
-            // `VISIBLE_RESULTS` rows, centered on the screen.
-            let width = screen_bounds.size.width * WIDTH_RATIO;
-            let height = crate::ui::list::ROW_HEIGHT * VISIBLE_RESULTS + px(CHROME_HEIGHT);
-            let x = screen_bounds.origin.x + (screen_bounds.size.width - width) / 2.0;
-            let y = screen_bounds.origin.y + (screen_bounds.size.height - height) / 2.0;
-            let bounds = Bounds::new(point(x, y), size(width, height));
+            // `VISIBLE_RESULTS` rows, centered on the display under the
+            // pointer. gpui's own display list merges every monitor into a
+            // single bounds on at least some multi-monitor X11 setups, which
+            // is why the platform is asked directly first; `wait_for_a_display`
+            // is a fallback for wherever that is not available.
+            let bounds = match platform::window_geometry::focused_display_bounds() {
+                Some((x, y, width, height)) => bounds_for_display(x, y, width, height),
+                None => {
+                    let screen_bounds = wait_for_a_display(cx).await?;
+                    bounds_for_display(
+                        f32::from(screen_bounds.origin.x) as i32,
+                        f32::from(screen_bounds.origin.y) as i32,
+                        f32::from(screen_bounds.size.width) as i32,
+                        f32::from(screen_bounds.size.height) as i32,
+                    )
+                }
+            };
 
             let options = WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
