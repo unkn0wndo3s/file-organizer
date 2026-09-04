@@ -28,7 +28,7 @@ impl Render for TitleBar {
             .flex()
             .justify_between()
             .items_center()
-            .child(div().px_4().text_sm().child("File Organizer"))
+            .child(div().px_4().text_sm().text_color(rgb(0xffffff)).child("File Organizer"))
             .child(
                 div()
                     .flex()
@@ -57,5 +57,5 @@ fn title_bar_button(id: &'static str, icon: IconName) -> Stateful<Div> {
         .justify_center()
         .rounded_md()
         .cursor_pointer()
-        .child(Icon::new(icon))
+        .child(Icon::new(icon).text_color(rgb(0xffffff)))
 }

@@ -49,10 +49,12 @@ impl LogConsole {
 }
 
 impl Render for LogConsole {
-    fn render(&mut self, _: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         if !self.visible {
             return div();
         }
+
+        let this = cx.entity();
 
         div()
             .w_full()
@@ -72,18 +74,24 @@ impl Render for LogConsole {
                     .child("Console"),
             )
             .child(
-                div()
-                    .id("log-console-scroll-view")
-                    .w_full()
-                    .h_0()
-                    .flex_grow()
-                    .overflow_y_scroll()
-                    .px_3()
-                    .pb_2()
-                    .v_flex()
-                    .children(self.lines.iter().map(|line| {
-                        div().text_xs().font_family("monospace").text_color(rgb(0xbbbbbb)).child(line.clone())
-                    })),
+                div().w_full().h_0().flex_grow().px_3().pb_2().child(
+                    // Only the visible lines are built each frame: rendering
+                    // all of them, up to `MAX_LINES`, made every redraw the
+                    // panel triggers - including one on every mouse move
+                    // while it has hover state to update - noticeably janky.
+                    uniform_list("log-console-lines", self.lines.len(), move |visible, _window, cx| {
+                        this.read(cx)
+                            .lines
+                            .get(visible)
+                            .unwrap_or_default()
+                            .iter()
+                            .map(|line| {
+                                div().text_xs().font_family("monospace").text_color(rgb(0xbbbbbb)).child(line.clone())
+                            })
+                            .collect()
+                    })
+                    .size_full(),
+                ),
             )
     }
 }

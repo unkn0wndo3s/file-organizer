@@ -27,6 +27,9 @@ const WIDTH_RATIO: f32 = 2.0 / 5.0;
 /// Everything above the result rows: the title bar, the search input, and
 /// their paddings and gaps.
 const CHROME_HEIGHT: f32 = 148.0;
+/// Extra height the window grows by while the console panel is open: its own
+/// height (`log_console`'s `h_64`) plus the gap before it.
+const CONSOLE_HEIGHT: f32 = 256.0 + 16.0;
 
 /// Requests raised by the tray and the hotkey, which run on their own threads
 /// and cannot touch the gpui context directly.
@@ -85,9 +88,8 @@ impl Main {
         })
         .detach();
 
-        let console_target = log_console.clone();
-        cx.subscribe(&title_bar, move |_this, _title_bar, event: &TitleBarEvent, cx| match event {
-            TitleBarEvent::ToggleConsole => console_target.update(cx, |console, cx| console.toggle(cx)),
+        cx.subscribe(&title_bar, move |this, _title_bar, event: &TitleBarEvent, cx| match event {
+            TitleBarEvent::ToggleConsole => this.toggle_console(cx),
         })
         .detach();
 
@@ -250,7 +252,8 @@ impl Main {
             AppCommand::HideWindow => self.hide_window(cx),
             AppCommand::ToggleWindow => self.toggle_window(cx),
             AppCommand::ToggleConsole => {
-                self.log_console.update(cx, |console, cx| console.toggle(cx));
+                self.show_window(cx);
+                self.toggle_console(cx);
             }
             AppCommand::ToggleAutostart => {
                 autostart::toggle();
@@ -286,6 +289,24 @@ impl Main {
         } else {
             self.show_window(cx);
         }
+    }
+
+    /// The window is sized to fit the result list exactly, with no room to
+    /// spare, so the console panel needs the window itself to grow into
+    /// rather than sharing that space, or its content would spill past the
+    /// bottom edge.
+    fn toggle_console(&self, cx: &mut Context<Self>) {
+        let visible = self.log_console.update(cx, |console, cx| {
+            console.toggle(cx);
+            console.is_visible()
+        });
+
+        self.with_window(cx, |window| {
+            let mut bounds = window.bounds();
+            bounds.size.height =
+                if visible { bounds.size.height + px(CONSOLE_HEIGHT) } else { bounds.size.height - px(CONSOLE_HEIGHT) };
+            window.resize(bounds.size);
+        });
     }
 
     fn with_window(&self, cx: &mut Context<Self>, action: impl FnOnce(&mut Window)) {
