@@ -43,16 +43,6 @@ impl Render for TitleBar {
                                     .update(cx, |_, cx| cx.emit(TitleBarEvent::ToggleConsole))
                                     .ok();
                             }),
-                    )
-                    .child(
-                        title_bar_button("minimize-button", IconName::Minimize)
-                            .hover(|style| style.bg(rgba(0xffffff10)))
-                            .on_click(|_, window, _| window.minimize_window()),
-                    )
-                    .child(
-                        title_bar_button("close-button", IconName::Close)
-                            .hover(|style| style.bg(rgba(0xef4444aa)))
-                            .on_click(|_, _, cx| cx.quit()),
                     ),
             )
     }

@@ -16,8 +16,17 @@ use async_channel::{unbounded, Receiver, Sender};
 use gpui::*;
 use gpui_component::{input::*, Icon, Root, StyledExt};
 use notify::{Event, RecursiveMode, Watcher};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
+
+/// Rows shown at once, the window is sized to fit exactly this many.
+const VISIBLE_RESULTS: usize = 5;
+/// Fraction of the screen's width the window occupies.
+const WIDTH_RATIO: f32 = 2.0 / 5.0;
+/// Everything above the result rows: the title bar, the search input, and
+/// their paddings and gaps.
+const CHROME_HEIGHT: f32 = 148.0;
 
 /// Requests raised by the tray and the hotkey, which run on their own threads
 /// and cannot touch the gpui context directly.
@@ -35,6 +44,12 @@ pub struct Main {
     /// Needed to drive the window from the tray and hotkey threads, which only
     /// reach the application context.
     window_handle: AnyWindowHandle,
+    /// Tracks our own show/hide state rather than reading it back from the
+    /// window: a visible-but-unfocused window (the user clicked elsewhere) is
+    /// still "shown" as far as the app is concerned, but `is_window_active()`
+    /// would report it the same as a minimized one, making a toggle re-show
+    /// it instead of hiding it.
+    shown: Arc<AtomicBool>,
     title_bar: Entity<TitleBar>,
     list: Entity<List>,
     log_console: Entity<LogConsole>,
@@ -49,6 +64,7 @@ pub struct Main {
 
 impl Main {
     pub fn new(
+        shown: Arc<AtomicBool>,
         title_bar: Entity<TitleBar>,
         list: Entity<List>,
         log_console: Entity<LogConsole>,
@@ -86,6 +102,7 @@ impl Main {
 
         Self {
             window_handle: window.window_handle(),
+            shown,
             title_bar,
             input_state,
             list,
@@ -246,6 +263,7 @@ impl Main {
     }
 
     fn show_window(&self, cx: &mut Context<Self>) {
+        self.shown.store(true, Ordering::Relaxed);
         self.with_window(cx, |window| {
             window.activate_window();
             log_bus::log("[search] window shown");
@@ -255,6 +273,7 @@ impl Main {
     /// gpui has no dedicated hide, so the window is minimized instead, which is
     /// what the JavaFX stage did when it stepped out of the way.
     fn hide_window(&self, cx: &mut Context<Self>) {
+        self.shown.store(false, Ordering::Relaxed);
         self.with_window(cx, |window| {
             window.minimize_window();
             log_bus::log("[search] window hidden");
@@ -262,15 +281,11 @@ impl Main {
     }
 
     fn toggle_window(&self, cx: &mut Context<Self>) {
-        self.with_window(cx, |window| {
-            if window.is_window_active() {
-                log_bus::log("[search] toggle: hiding the window");
-                window.minimize_window();
-            } else {
-                log_bus::log("[search] toggle: showing the window");
-                window.activate_window();
-            }
-        });
+        if self.shown.load(Ordering::Relaxed) {
+            self.hide_window(cx);
+        } else {
+            self.show_window(cx);
+        }
     }
 
     fn with_window(&self, cx: &mut Context<Self>, action: impl FnOnce(&mut Window)) {
@@ -283,7 +298,8 @@ impl Render for Main {
         div()
             .size_full()
             .v_flex()
-            .bg(rgb(0x1e1e1e))
+            .rounded_lg()
+            .bg(rgba(0x1e1e1ee6))
             .child(self.title_bar.clone())
             .child(
                 div()
@@ -504,46 +520,43 @@ fn main() {
         cx.spawn(async move |cx| {
             let screen_bounds = wait_for_a_display(cx).await?;
 
-            // The restore size a maximized window would return to if
-            // un-maximized; kept at the previous default so that action still
-            // lands on a sensible size rather than the screen's minimum.
-            let restore_width = screen_bounds.size.width * 0.6;
-            let restore_height = screen_bounds.size.height * 0.6;
-            let restore_x = screen_bounds.origin.x + (screen_bounds.size.width - restore_width) / 2.0;
-            let restore_y = screen_bounds.origin.y + (screen_bounds.size.height - restore_height) / 2.0;
-            let restore_bounds = Bounds::new(point(restore_x, restore_y), size(restore_width, restore_height));
+            // A launcher-style popup, not a full window: fixed size, wide
+            // enough for a comfortable line of text, tall enough for exactly
+            // `VISIBLE_RESULTS` rows, centered on the screen.
+            let width = screen_bounds.size.width * WIDTH_RATIO;
+            let height = crate::ui::list::ROW_HEIGHT * VISIBLE_RESULTS + px(CHROME_HEIGHT);
+            let x = screen_bounds.origin.x + (screen_bounds.size.width - width) / 2.0;
+            let y = screen_bounds.origin.y + (screen_bounds.size.height - height) / 2.0;
+            let bounds = Bounds::new(point(x, y), size(width, height));
 
-            // Requesting Maximized together with window_min_size at creation
-            // makes gpui's Wayland backend send the compositor an invalid
-            // (zero size) wp_viewport destination during the maximize
-            // handshake — reproduced against KWin: neither one alone
-            // triggers it, only the combination, and only at creation time.
-            // Opening windowed and maximizing a moment later, after the
-            // window has completed its first configure, avoids the race.
             let options = WindowOptions {
-                window_bounds: Some(WindowBounds::Windowed(restore_bounds)),
-                window_min_size: Some(size(screen_bounds.size.width * 0.3, screen_bounds.size.height * 0.2)),
-                is_resizable: true,
+                window_bounds: Some(WindowBounds::Windowed(bounds)),
+                is_resizable: false,
                 titlebar: None,
+                window_background: WindowBackgroundAppearance::Transparent,
+                // Without this, a non-maximized window gets the compositor's
+                // own server side decorations — close/minimize buttons the
+                // title bar deliberately does not have.
+                window_decorations: Some(WindowDecorations::Client),
                 ..Default::default()
             };
+
+            let shown = Arc::new(AtomicBool::new(true));
+            let shown_at_startup = Arc::clone(&shown);
 
             let window_handle = cx.open_window(options, |window, cx| {
                 let title_bar = cx.new(|_cx| TitleBar::new());
                 let list = cx.new(List::new);
                 let log_console = cx.new(|_cx| LogConsole::new());
-                let view = cx.new(|cx| Main::new(title_bar, list, log_console, log_lines, window, cx));
+                let view = cx.new(|cx| Main::new(shown, title_bar, list, log_console, log_lines, window, cx));
                 cx.new(|cx| Root::new(view, window, cx))
             })?;
 
             cx.background_executor().timer(Duration::from_millis(50)).await;
-            // Sized and shaped like a restored window would be, then minimized
-            // right away: the app lives in the tray until Ctrl+Space or the
-            // tray icon brings it up, it should not appear on launch.
-            let _ = window_handle.update(cx, |_root, window, _cx| {
-                window.zoom_window();
-                window.minimize_window();
-            });
+            // The app lives in the tray until Ctrl+Space, the tray icon, or
+            // `--toggle` brings it up; it should not appear on launch.
+            let _ = window_handle.update(cx, |_root, window, _cx| window.minimize_window());
+            shown_at_startup.store(false, Ordering::Relaxed);
 
             Ok::<_, anyhow::Error>(())
         })

@@ -19,7 +19,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 /// Height of one row, which `uniform_list` needs to be uniform to work.
-const ROW_HEIGHT: Pixels = px(36.0);
+pub const ROW_HEIGHT: Pixels = px(36.0);
 
 /// Extensions shown with a dedicated icon.
 const IMAGE_EXTENSIONS: &[&str] = &["jpg", "jpeg", "png", "gif", "bmp", "tif", "tiff", "webp", "heic", "svg", "ico"];

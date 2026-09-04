@@ -30,6 +30,9 @@ other distribution through a generic install path).
   moved into the bucket matching its extension, and folders land in `Folders`.
 - **Instant search** — a searchable index of the managed folders, with a type
   icon and the containing folder for each entry.
+- **Launcher style window** — a compact, translucent popup sized to 2/5 of the
+  screen's width and five results tall, with no close or minimize button; it
+  is dismissed the same way it is brought up.
 - **Open and reveal** — click an entry to open it, right click to reveal it in
   the system file manager.
 - **Live index** — the managed folders are watched, so the list follows what

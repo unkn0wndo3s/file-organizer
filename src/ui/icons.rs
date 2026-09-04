@@ -6,14 +6,12 @@ use std::borrow::Cow;
 /// The SVG icons, embedded so a packaged build carries them with it instead of
 /// looking for an assets folder next to the executable.
 const ASSETS: &[(&str, &[u8])] = &[
-    ("icons/close.svg", include_bytes!("../../assets/icons/close.svg")),
     ("icons/file-archive.svg", include_bytes!("../../assets/icons/file-archive.svg")),
     ("icons/file-image.svg", include_bytes!("../../assets/icons/file-image.svg")),
     ("icons/file-music.svg", include_bytes!("../../assets/icons/file-music.svg")),
     ("icons/file-video.svg", include_bytes!("../../assets/icons/file-video.svg")),
     ("icons/file.svg", include_bytes!("../../assets/icons/file.svg")),
     ("icons/folder.svg", include_bytes!("../../assets/icons/folder.svg")),
-    ("icons/minus.svg", include_bytes!("../../assets/icons/minus.svg")),
     ("icons/search.svg", include_bytes!("../../assets/icons/search.svg")),
     ("icons/settings.svg", include_bytes!("../../assets/icons/settings.svg")),
 ];
@@ -57,8 +55,6 @@ impl AssetSource for LocalAssets {
 
 #[derive(Clone, Copy, Debug)]
 pub enum IconName {
-    Close,
-    Minimize,
     File,
     Folder,
     Image,
@@ -72,8 +68,6 @@ pub enum IconName {
 impl IconNamed for IconName {
     fn path(self) -> SharedString {
         match self {
-            IconName::Close => "icons/close.svg".into(),
-            IconName::Minimize => "icons/minus.svg".into(),
             IconName::File => "icons/file.svg".into(),
             IconName::Folder => "icons/folder.svg".into(),
             IconName::Image => "icons/file-image.svg".into(),
@@ -93,8 +87,6 @@ mod tests {
     #[test]
     fn every_icon_name_resolves_to_an_embedded_asset() {
         let icons = [
-            IconName::Close,
-            IconName::Minimize,
             IconName::File,
             IconName::Folder,
             IconName::Image,
